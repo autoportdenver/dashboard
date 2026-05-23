@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoPort — Operations Dashboard</title>
+  <link rel="stylesheet" href="src/css/dashboard.css">
+</head>
+<body>
+
+<!-- ══════════ HEADER ══════════ -->
+<div id="hdr">
+  <div class="logo" style="display:flex;align-items:center;gap:0;padding:0">
+    <img id="logo-img" src="src/assets/logo.png" alt="AutoPort" style="height:34px;width:auto;display:block">
+    <em style="font-style:normal;font-weight:400;font-size:10px;color:var(--muted);margin-left:8px;letter-spacing:1px;text-transform:uppercase;align-self:flex-end;padding-bottom:4px">DENVER</em>
+  </div>
+  <nav id="nav">
+    <button class="nav-btn active" onclick="showPage('home')">🏠 Home</button>
+    <button class="nav-btn" onclick="showPage('metrics')">📊 Operating</button>
+    <button class="nav-btn" onclick="showPage('financial')">💵 Financial</button>
+    <button class="nav-btn" onclick="showPage('cashflow')">🏦 Cash Flow</button>
+    <button class="nav-btn" onclick="showPage('repair')">🔧 Repairs</button>
+    <button class="nav-btn" onclick="showPage('meetings')">📅 Meetings</button>
+  </nav>
+  <div id="hdr-date"></div>
+</div>
+
+<!-- ══════════ PAGES ══════════ -->
+<div id="page-home" class="page active">
+  <div id="home-body"><div class="loading"><div class="spinner"></div>Loading…</div></div>
+</div>
+
+<div id="page-metrics" class="page">
+  <div id="metrics-body"><div class="loading"><div class="spinner"></div>Click to load…</div></div>
+</div>
+
+<div id="page-financial" class="page">
+  <div id="financial-body"><div class="loading"><div class="spinner"></div>Click to load…</div></div>
+</div>
+
+<div id="page-cashflow" class="page">
+  <div id="cashflow-body"><div class="loading"><div class="spinner"></div>Click to load…</div></div>
+</div>
+
+<div id="page-repair" class="page">
+  <div id="repair-body"><div class="loading"><div class="spinner"></div>Click to load…</div></div>
+</div>
+
+<div id="page-meetings" class="page">
+  <div id="meetings-body"><div class="loading"><div class="spinner"></div>Click to load…</div></div>
+</div>
+
+<!-- ══════════ SCRIPTS ══════════
+     Load order matters — each file depends on the ones above it.
+     config    : constants (Drive IDs, LOCAL_FILES paths, chart of accounts)
+     utils     : pure helpers (CSV, money, dates, P&L extractor)
+     drive     : Google Drive / Cowork MCP layer (isolated)
+     parsers   : domain parsers (deal rows, sales log, auction detection)
+     data      : unified loader — local files first, Drive fallback
+     pages/*   : one file per dashboard tab
+     dashboard : state, navigation, init (loaded last)
+     ══════════════════════════════════════════════════════════ -->
+<script src="src/js/config.js"></script>
+<script src="src/js/utils.js"></script>
+<script src="src/js/drive.js"></script>
+<script src="src/js/parsers.js"></script>
+<script src="src/js/data.js"></script>
+<script src="src/js/pages/home.js"></script>
+<script src="src/js/pages/metrics.js"></script>
+<script src="src/js/pages/financial.js"></script>
+<script src="src/js/pages/cashflow.js"></script>
+<script src="src/js/pages/repair.js"></script>
+<script src="src/js/pages/meetings.js"></script>
+<script src="src/js/dashboard.js"></script>
+
+</body>
+</html>
