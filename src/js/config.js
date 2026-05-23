@@ -7,7 +7,7 @@
 //  Local file paths are used by data.js when Drive is not available.
 // ══════════════════════════════════════════════
 
-// ── Google Drive MCP tool identifiers ──
+// ── Google Drive MCP tool identifiers ── TODO
 const DRIVE_READ   = 'mcp__d97b1518-9016-4011-a420-7ec2458ff224__read_file_content';
 const DRIVE_SEARCH = 'mcp__d97b1518-9016-4011-a420-7ec2458ff224__search_files';
 
@@ -40,15 +40,15 @@ const LOCAL_FILES = {
   inventory:     'src/uploads/inventory.csv',
   dealDetail:    'src/uploads/deal_detail.csv',
   itemizedCosts: 'src/uploads/itemized_costs.csv',
-  dealPayments:  'src/uploads/deal_payments.csv',
-  loanPayments:  'src/uploads/loan_payments.csv',
+  dealPayments:  'src/uploads/DealerCloud/DealPayments/202603-Deal_Payments.csv',
+  loanPayments:  'src/uploads/DealerCloud/LoanPayments/20260504-Loan_Payments.csv',
   leads:         'src/uploads/leads.csv',
-  salesLog:      'src/uploads/Sales-Live.xlsx',   // flat export of Sales - Live sheet
+  salesLog:      'src/uploads/Sales_Live.xlsx',   // flat export of Sales - Live sheet
   accounting:    'src/uploads/accounting.txt',   // flat text export of Accounting Package
   chase9532:     'src/uploads/ChaseBank/Checking/Chase9532_Activity_20260505.CSV',
-  chaseDebit:    'src/uploads/chase_debit.csv',
-  chaseCredit:   'src/uploads/chase_credit.csv',
-  warranty:      'src/uploads/Warranties/26 05 05 - Warranties Report.xls',
+  chaseDebit:    'src/uploads/ChaseBank/Debit/chase_debit.csv',
+  chaseCredit:   'src/uploads/ChaseBank/Credit/chase_credit.csv',
+  warranty:      'src/uploads/Warranties/260505 -Warranties_Report.xls',
 };
 
 // ── Business constants ──

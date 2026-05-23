@@ -284,9 +284,3 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml) {
   </div>
   `;
 }
-
-let keepInMind = 'Add notes that should stay top-of-mind for the team…';
-function saveKeepInMind() {
-  keepInMind = document.getElementById('keep-in-mind').innerText;
-  window.sendPrompt('Save keep-in-mind note: ' + keepInMind.substring(0,200));
-}

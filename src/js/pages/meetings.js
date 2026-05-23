@@ -342,16 +342,3 @@ function setupMeetingNoteHandlers(dealRows, itemRows, salesLogData) {
     window.sendPrompt('Save this meeting note to Google Drive: ' + txt.substring(0,3000));
   };
 }
-
-// ══════════════════════════════════════════════
-//  INIT
-// ══════════════════════════════════════════════
-(function init() {
-  // Set date header
-  document.getElementById('hdr-date').textContent = new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'});
-  // Load home page on start
-  loaded.home = true;
-  loadHome().catch(err => {
-    document.getElementById('home-body').innerHTML = errorBox(err.message||String(err));
-  });
-})();

@@ -16,7 +16,7 @@ async function loadFinancial() {
 }
 
 // In-memory transaction categories
-let txCategories = {}; // key: `${date}|${amount}|${desc}` -> category
+// let txCategories = {}; // key: `${date}|${amount}|${desc}` -> category
 
 function renderFinancial(el, acctText, itemRows) {
   // ── Extract P&L metrics with multi-period support ──
