@@ -10,7 +10,6 @@ async function loadMeetings() {
   const [dealR, itemR, salesLogR] = await Promise.allSettled([
     getDealDetailRows(), getItemizedCostRows(), getSalesLogData()
   ]);
-
   const dealRows     = dealR.status     === 'fulfilled' ? dealR.value     : [];
   const itemRows     = itemR.status     === 'fulfilled' ? itemR.value     : [];
   const salesLogData = salesLogR.status === 'fulfilled' ? salesLogR.value : {kris:[],joseph:[],felix:[]};
@@ -342,3 +341,4 @@ function setupMeetingNoteHandlers(dealRows, itemRows, salesLogData) {
     window.sendPrompt('Save this meeting note to Google Drive: ' + txt.substring(0,3000));
   };
 }
+

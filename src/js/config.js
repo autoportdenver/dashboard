@@ -7,9 +7,8 @@
 //  Local file paths are used by data.js when Drive is not available.
 // ══════════════════════════════════════════════
 
-// ── Google Drive MCP tool identifiers ── TODO
-const DRIVE_READ   = 'mcp__d97b1518-9016-4011-a420-7ec2458ff224__read_file_content';
-const DRIVE_SEARCH = 'mcp__d97b1518-9016-4011-a420-7ec2458ff224__search_files';
+// ── Google OAuth 2.0 ──
+const GOOGLE_CLIENT_ID = '340123477262-1ik6ki43bqudvvthnrqiem08gdu90q48.apps.googleusercontent.com';
 
 // ── Google Drive file/folder IDs ──
 const FILE_IDS = {
@@ -18,20 +17,24 @@ const FILE_IDS = {
   dashboard:  '11dyCxDx1iEc4v-k0oPzHV0GgsVFJKOXU',
 };
 const FOLDER_IDS = {
-  dealDetail:    '1gaaZ5UxGrm1nW23SHXXf-dFkLvc_dJm8',
-  dealPayments:  '1RnyD-0MSphr9b9NnbSdlJa_cgcQPnAcz',
-  itemizedCosts: '1skBt9ltZRx0M7srOFtdShm-FGmHjppM0',
-  loanPayments:  '1E4oAlHAA7tj6ub4SsRQA3IbXYi6oJX4Y',
-  inventory:     '19xfbNjgL5R71FgFUyDQ5M_wDoLwF5Pp5',
-  leads:         '1MuOT0tv8PcKEMoJbDKWJ_e7znrb8MGIT',
+  dealDetail:       '1gaaZ5UxGrm1nW23SHXXf-dFkLvc_dJm8',
+  dealPayments:     '1RnyD-0MSphr9b9NnbSdlJa_cgcQPnAcz',
+  itemizedCosts:    '1skBt9ltZRx0M7srOFtdShm-FGmHjppM0',
+  loanPayments:     '1E4oAlHAA7tj6ub4SsRQA3IbXYi6oJX4Y',
+  inventory:        '19xfbNjgL5R71FgFUyDQ5M_wDoLwF5Pp5',
+  leads:            '1MuOT0tv8PcKEMoJbDKWJ_e7znrb8MGIT',
+  westlakeFlooring: '1NkyFcst-IElr7rLgQKUiBZu0kwefE3CW',
+  dtsReports:       '1-dLxtYiBodwsvR2JXtL08IbIdR895jFF',  // Module Reports - Title Transfers
 };
-// Drive name-search patterns (files found by name, not folder)
+// Drive name-search patterns (files found by title, not folder)
+// NOTE: this MCP uses 'title contains' — NOT 'name contains'
 const FILE_NAME_PATTERNS = {
-  salesLive:   'Sales - Live',
-  chase9532:   'Chase9532',
-  chaseDebit:  'Chase Debit',
-  chaseCredit: 'Chase Credit',
-  warranty:    'Warranty Remittance',
+  salesLive:    'Sales - Live',
+  chase9532:    'Chase9532',
+  chaseDebit:   'Chase Debit',
+  chaseCredit:  'Chase Credit',
+  warranty:     'Warranty Remittance',
+  titlesReport: 'Sold Inventory - Title Report',  // Reports/Titles folder
 };
 
 // ── Local file paths (src/uploads/) ── TODO

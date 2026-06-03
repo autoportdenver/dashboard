@@ -126,11 +126,12 @@ function parseSalesLog(txt) {
   }
 
   const NEW_HDR = 'Date,Type,Finance?,Stock,Inventory Vehicle Name';
-  const OLD_HDR = 'Date,Car,Type,Description';
+  const OLD_HDR = 'Kris Date,Car';  // Kris-specific old-format header prefix
 
   const josephLabelIdx = txt.indexOf('Joseph-Cars');
   const felixLabelIdx  = txt.indexOf('Felix-Cars');
-  const krisLabelIdx   = ['Kris-Cars', 'Kris Cars', 'Kris'].reduce((found, pat) => {
+  // Only match explicit tab-name strings — NOT bare 'Kris' which hits 'Kris Date' at position 0
+  const krisLabelIdx   = ['Kris-Cars', 'Kris Cars'].reduce((found, pat) => {
     if (found >= 0) return found;
     const idx = txt.indexOf(pat);
     return idx >= 0 ? idx : -1;

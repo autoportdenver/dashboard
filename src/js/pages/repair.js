@@ -1,7 +1,7 @@
 'use strict';
 
 // ══════════════════════════════════════════════
-//  PAGE: REPAIRS — src/js/pages/repair.js
+//  PAGE: REPAIR — src/js/pages/repair.js
 // ══════════════════════════════════════════════
 
 async function loadRepair() {
@@ -13,6 +13,23 @@ async function loadRepair() {
 }
 
 function renderRepair(el, invRows) {
+  // ── Restore persisted state from localStorage ──
+  // Runs before any render so saved notes/status/stars survive page reloads and
+  // new Inventory report drops. Keyed by stock# so new vehicles start fresh.
+  (function loadRepairState() {
+    try {
+      const saved = localStorage.getItem('autoport_repair_state');
+      if (!saved) return;
+      const d = JSON.parse(saved);
+      if (d.notes)      Object.assign(repairNotes,      d.notes);
+      if (d.status)     Object.assign(repairStatus,     d.status);
+      if (d.stars)      Object.assign(repairStars,      d.stars);
+      if (d.deleted)    Object.assign(repairDeleted,    d.deleted);
+      if (d.difficulty) Object.assign(repairDifficulty, d.difficulty);
+      if (d.sortMode)   repairSortMode = d.sortMode;
+    } catch (e) { /* corrupted data — start fresh */ }
+  })();
+
   const active = invRows.filter(r => (r.status||'').toLowerCase() === 'active');
   let statusFilter = 'active'; // default: hide Complete
 
@@ -50,7 +67,7 @@ function renderRepair(el, invRows) {
         onclick="toggleRepairExpand('${stock}')"
         onmouseenter="this.style.boxShadow='0 2px 10px rgba(0,0,0,.1)'"
         onmouseleave="this.style.boxShadow=''">
-        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px">
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 10px">
           <span style="font-size:15px;flex-shrink:0;line-height:1" onclick="event.stopPropagation();toggleRepairStar('${stock}')">${starred?'⭐':'☆'}</span>
           ${wrenchHtml(stock)}
           <div style="flex:1;min-width:0">
@@ -111,7 +128,7 @@ function renderRepair(el, invRows) {
             placeholder="Mechanic notes, parts needed, work completed…"
             style="width:100%;min-height:88px;background:var(--card2);border:1.5px solid var(--border);border-radius:6px;color:var(--text);padding:9px 11px;font-size:12px;line-height:1.7;resize:vertical;font-family:inherit"
             onclick="event.stopPropagation()"
-            oninput="repairNotes['${stock}']=this.value">${noteVal}</textarea>
+            oninput="repairNotes['${stock}']=this.value;window.saveRepairState()">${noteVal}</textarea>
         </div>
       </div>`;
   }
@@ -278,23 +295,26 @@ function renderRepair(el, invRows) {
   };
   window.toggleRepairStar = function(stock) {
     repairStars[stock] = !repairStars[stock];
+    window.saveRepairState();
     renderList();
   };
   window.setRepairStatus = function(stock, val) {
     repairStatus[stock] = val;
-    // If set to Complete, collapse and move to archive on next render
     if (val === 'Complete') repairExpanded[stock] = false;
+    window.saveRepairState();
     renderList();
   };
   window.archiveRepairEntry = function(stock) {
     repairDeleted[stock] = true;
     repairExpanded[stock] = false;
+    window.saveRepairState();
     renderList();
   };
   window.reopenRepair = function(stock) {
     repairDeleted[stock] = false;
     repairStatus[stock]  = 'Not Started';
     repairExpanded[stock]= true;
+    window.saveRepairState();
     renderList();
   };
   window.setRepairFilter = function(f) {
@@ -304,15 +324,41 @@ function renderRepair(el, invRows) {
   window.cycleRepairDifficulty = function(stock) {
     const cur = repairDifficulty[stock] || 0;
     repairDifficulty[stock] = cur >= 3 ? 0 : cur + 1;
+    window.saveRepairState();
     renderList();
   };
   window.setRepairSort = function(mode) {
     repairSortMode = mode;
+    window.saveRepairState();
     renderList();
   };
   window.saveRepairNotes = function() {
     const notes    = Object.entries(repairNotes).filter(([,v])=>v).map(([k,v])=>`${k}: ${v}`).join('\n');
     const statuses = Object.entries(repairStatus).filter(([,v])=>v).map(([k,v])=>`${k}: ${v}`).join('\n');
-    window.sendPrompt('Repair log — Notes:\n' + (notes||'(none)').substring(0,2000) + '\n\nStatuses:\n' + (statuses||'(none)').substring(0,500));
+    window.sendPrompt && window.sendPrompt('Repair log — Notes:\n' + (notes||'(none)').substring(0,2000) + '\n\nStatuses:\n' + (statuses||'(none)').substring(0,500));
+  };
+
+  window.saveRepairState = function() {
+    try {
+      localStorage.setItem('autoport_repair_state', JSON.stringify({
+        notes:      repairNotes,
+        status:     repairStatus,
+        stars:      repairStars,
+        deleted:    repairDeleted,
+        difficulty: repairDifficulty,
+        sortMode:   repairSortMode,
+      }));
+    } catch (e) { /* storage full or unavailable */ }
+  };
+
+  window.clearRepairState = function() {
+    localStorage.removeItem('autoport_repair_state');
+    Object.keys(repairNotes).forEach(k => delete repairNotes[k]);
+    Object.keys(repairStatus).forEach(k => delete repairStatus[k]);
+    Object.keys(repairStars).forEach(k => delete repairStars[k]);
+    Object.keys(repairDeleted).forEach(k => delete repairDeleted[k]);
+    Object.keys(repairDifficulty).forEach(k => delete repairDifficulty[k]);
+    renderList();
   };
 }
+

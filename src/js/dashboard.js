@@ -31,19 +31,24 @@ let floorCreditLimit = 0;
 let txCategories     = {};  // `${date}|${amount}|${desc}` -> category string
 
 // Meetings (in-memory — resets on reload)
-let meetingNotesStore  = {};  // weekKey -> { notes, goals, wins, losses }
-let selectedWeek       = null;
-let calMonth           = new Date();
+let meetingNotesStore   = {};  // weekKey -> { notes, goals, wins, losses }
+let selectedWeek        = null;
+let calMonth            = new Date();
 let selectedMonthOffset = 0;
+
+// Keep-in-mind note (persists across page switches)
+let keepInMind = 'Add notes that should stay top-of-mind for the team…';
+function saveKeepInMind() {
+  keepInMind = document.getElementById('keep-in-mind').innerText;
+  window.sendPrompt && window.sendPrompt('Save keep-in-mind note: ' + keepInMind.substring(0, 200));
+}
 
 // ── Navigation ──
 const PAGE_LOADERS = {
-  home:      loadHome,
-  metrics:   loadMetrics,
-  financial: loadFinancial,
-  cashflow:  loadCashFlow,
-  repair:    loadRepair,
-  meetings:  loadMeetings,
+  home:     loadHome,
+  metrics:  loadMetrics,
+  repair:   loadRepair,
+  meetings: loadMeetings,
 };
 
 function showPage(name) {
@@ -61,8 +66,7 @@ function showPage(name) {
   }
 }
 
-// ── Global UI helpers called from inline HTML ──
-
+// ── Global UI helpers ──
 window.setFloorLimit = function (val) {
   const n = parseFloat(String(val).replace(/[$,\s]/g, ''));
   floorCreditLimit = isNaN(n) ? 0 : n;
@@ -83,18 +87,42 @@ window.setFloorLimit = function (val) {
     </div>`;
 };
 
-let keepInMind = 'Add notes that should stay top-of-mind for the team…';
-function saveKeepInMind() {
-  keepInMind = document.getElementById('keep-in-mind').innerText;
-  window.sendPrompt('Save keep-in-mind note: ' + keepInMind.substring(0, 200));
+// ── Drive auth callback — called by drive.js after OAuth token is granted ──
+function onDriveReady() {
+  // Hide auth gate and load home if not already loaded
+  const gate = document.getElementById('auth-gate');
+  if (gate) gate.style.display = 'none';
+  if (!loaded.home) {
+    loaded.home = true;
+    loadHome().catch(err => {
+      document.getElementById('home-body').innerHTML = errorBox(err.message || String(err));
+    });
+  }
 }
 
 // ── Init ──
 (function init() {
   document.getElementById('hdr-date').textContent =
     new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  loaded.home = true;
-  loadHome().catch(err => {
-    document.getElementById('home-body').innerHTML = errorBox(err.message || String(err));
-  });
+
+  // Set up OAuth token client (GIS library already loaded synchronously)
+  initDriveAuth();
+
+  // If Cowork MCP is available, skip auth gate and load immediately
+  if (window.cowork) {
+    loaded.home = true;
+    const gate = document.getElementById('auth-gate');
+    if (gate) gate.style.display = 'none';
+    loadHome().catch(err => {
+      document.getElementById('home-body').innerHTML = errorBox(err.message || String(err));
+    });
+    return;
+  }
+
+  // Otherwise try a silent OAuth token request (reuses existing Google session, no popup)
+  // If the user has signed in before, this resolves without a click; if not, auth-gate stays visible.
+  if (_tokenClient) {
+    _tokenClient.requestAccessToken({ prompt: 'none' });
+  }
+  // auth-gate remains visible until onDriveReady() hides it after successful auth
 })();

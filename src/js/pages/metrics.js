@@ -1,8 +1,8 @@
 'use strict';
 
-// ════════════════════════════════════════════════════
-//  PAGE: OPERATING METRICS — src/js/pages/metrics.js
-// ════════════════════════════════════════════════════
+// ══════════════════════════════════════════════
+//  PAGE: METRICS — src/js/pages/metrics.js
+// ══════════════════════════════════════════════
 
 async function loadMetrics() {
   const el = document.getElementById('metrics-body');
@@ -294,8 +294,8 @@ function renderMetrics(el, dealRows, leadsRows, itemRows, salesLogData, errHtml)
       </div>
     </div>
 
-    <!-- ── SP + Brand ── -->
-    <div class="grid-2" style="margin-bottom:16px">
+    <!-- ── SP Performance (full width) ── -->
+    <div style="margin-bottom:16px">
       <div class="card">
         <h3>Salesperson Performance — Sales Log</h3>
         ${spSorted.length ? spSorted.map(([name,s],i)=>`
@@ -333,17 +333,6 @@ function renderMetrics(el, dealRows, leadsRows, itemRows, salesLogData, errHtml)
           <span style="font-size:11px">File: "Sales - Live" · Tabs: Joseph-Cars, Felix-Cars, Kris-Cars</span><br>
           ${salesLogData._debug ? `<span style="font-size:10px;color:var(--accent);font-family:monospace">Debug: ${salesLogData._debug}</span>` : ''}
         </div>`}
-      </div>
-      <div class="card">
-        <h3>Units Sold by Brand</h3>
-        ${brandSorted.length ? `<div style="max-height:260px;overflow-y:auto">
-          ${brandSorted.map(([brand,ct])=>`
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px">
-              <span style="width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${brand}</span>
-              <div class="pbar" style="flex:1;margin-top:0"><div class="pbar-fill" style="width:${Math.round(ct/brandSorted[0][1]*100)}%"></div></div>
-              <span style="width:28px;text-align:right;color:var(--muted)">${ct}</span>
-            </div>`).join('')}
-        </div>` : '<div style="color:var(--muted);font-size:13px">No data.</div>'}
       </div>
     </div>
 
@@ -421,7 +410,7 @@ function renderMetrics(el, dealRows, leadsRows, itemRows, salesLogData, errHtml)
     </div>
 
     <!-- ── Brands + Mileage stacked left; Leads full panel right ── -->
-    <div style="display:grid;grid-template-columns:1fr 1.6fr;gap:14px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:1fr 2.4fr;gap:14px;margin-bottom:16px">
 
       <!-- Left column: Brand then Mileage -->
       <div style="display:flex;flex-direction:column;gap:14px">
@@ -495,3 +484,5 @@ function renderMetrics(el, dealRows, leadsRows, itemRows, salesLogData, errHtml)
   window.setMetricsPeriod = function(p) { periodFilter = p; render(); };
   render();
 }
+
+

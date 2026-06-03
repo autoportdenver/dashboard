@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AutoPort — Operations Dashboard</title>
   <link rel="stylesheet" href="src/css/dashboard.css">
+  <!-- Google Identity Services — loaded synchronously so it's ready before dashboard.js init -->
+  <script src="https://accounts.google.com/gsi/client"></script>
 </head>
 <body>
 
@@ -17,8 +19,6 @@
   <nav id="nav">
     <button class="nav-btn active" onclick="showPage('home')">🏠 Home</button>
     <button class="nav-btn" onclick="showPage('metrics')">📊 Operating</button>
-    <button class="nav-btn" onclick="showPage('financial')">💵 Financial</button>
-    <button class="nav-btn" onclick="showPage('cashflow')">🏦 Cash Flow</button>
     <button class="nav-btn" onclick="showPage('repair')">🔧 Repairs</button>
     <button class="nav-btn" onclick="showPage('meetings')">📅 Meetings</button>
   </nav>
@@ -27,19 +27,25 @@
 
 <!-- ══════════ PAGES ══════════ -->
 <div id="page-home" class="page active">
-  <div id="home-body"><div class="loading"><div class="spinner"></div>Loading…</div></div>
+  <div id="home-body">
+    <!-- Auth gate — replaced by real content once Drive is connected or local files load -->
+    <div id="auth-gate" style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+         padding:60px 20px;gap:16px;text-align:center">
+      <div style="font-size:40px">🔑</div>
+      <div style="font-size:18px;font-weight:700;color:var(--text)">Connect to Google Drive</div>
+      <div style="font-size:13px;color:var(--muted);max-width:360px">
+        Sign in with your Google account to load live data, or place CSV exports in
+        <code>src/uploads/</code> for local development.
+      </div>
+      <button onclick="requestDriveAccess()" class="btn btn-primary" style="font-size:14px;padding:10px 24px;margin-top:8px">
+        Sign in with Google
+      </button>
+    </div>
+  </div>
 </div>
 
 <div id="page-metrics" class="page">
   <div id="metrics-body"><div class="loading"><div class="spinner"></div>Click to load…</div></div>
-</div>
-
-<div id="page-financial" class="page">
-  <div id="financial-body"><div class="loading"><div class="spinner"></div>Click to load…</div></div>
-</div>
-
-<div id="page-cashflow" class="page">
-  <div id="cashflow-body"><div class="loading"><div class="spinner"></div>Click to load…</div></div>
 </div>
 
 <div id="page-repair" class="page">
@@ -52,11 +58,11 @@
 
 <!-- ══════════ SCRIPTS ══════════
      Load order matters — each file depends on the ones above it.
-     config    : constants (Drive IDs, LOCAL_FILES paths, chart of accounts)
+     config    : constants (Drive IDs, OAuth client ID, LOCAL_FILES paths)
      utils     : pure helpers (CSV, money, dates, P&L extractor)
-     drive     : Google Drive / Cowork MCP layer (isolated)
+     drive     : Drive layer — Cowork MCP → OAuth → (local handled in data.js)
      parsers   : domain parsers (deal rows, sales log, auction detection)
-     data      : unified loader — local files first, Drive fallback
+     data      : unified loader — Drive first, local files as fallback
      pages/*   : one file per dashboard tab
      dashboard : state, navigation, init (loaded last)
      ══════════════════════════════════════════════════════════ -->

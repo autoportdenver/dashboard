@@ -184,20 +184,147 @@ function extractPLMetrics(flatText) {
   }
 
   const rows = {
-    revenue:      getRow(['Net Revenue - Car Sales', 'Total Revenue', 'Net Revenue', 'Total Income']),
-    vehicleSales: getRow(['Vehicle Sales Revenue', 'Car Sales Revenue', 'Vehicle Sales']),
-    backendRev:   getRow(['Total Backend Revenue', 'Backend Revenue', 'F&I Revenue']),
-    cogs:         getRow(['Total Vehicle Sales COGS', 'Total COGS', 'Cost of Goods Sold']),
-    grossProfit:  getRow(['Gross Profit']),
-    totalOpex:    getRow(['Total Operating Expenses', 'Operating Expenses', 'Total Expenses']),
-    payroll:      getRow(['Total Payroll', 'Payroll & Benefits', 'Payroll Expenses', 'Payroll']),
-    rent:         getRow(['Rent & Utilities', 'Total Rent', 'Rent']),
-    floorInt:     getRow(['Floorplan Interest', 'Floor Plan Interest', 'Floor Interest']),
-    advertising:  getRow(['Advertising & Marketing', 'Advertising', 'Marketing']),
-    netIncome:    getRow(['Net Income', 'Net Profit / Loss', 'Net Ordinary Income', 'Net Profit']),
+    // ── Car Sales Revenue ──
+    grossRevCar:     getRow(['Gross Revenue (Total Sale) - Car Sales', 'Gross Revenue - Car Sales', 'Gross Revenue']),
+    fnceFees:        getRow(['Fnce Fees - For Financed Cars', 'Finance Fees - For Financed Cars', 'Finance Fees']),
+    netRevCar:       getRow(['Net Revenue - Car Sales', 'Net Revenue', 'Total Revenue', 'Total Income']),
+    // ── Car Sales COGS ──
+    cogsCar:         getRow(['COGS - Car Sales']),
+    dealrCloudChk:   getRow(['Dealr.Cloud - COGS (Checking)', 'Dealr.Cloud COGS (Checking)']),
+    flooringProxy:   getRow(['Flooring Payable', 'Floor Plan Payable']),
+    dealrCloudCash:  getRow(['Dealr.Cloud - COGS (Cash Inv Costs)', 'Dealr.Cloud COGS (Cash Inv Costs)']),
+    packCar:         getRow(['PACK - Car Sales', 'Pack - Car Sales', 'PACK']),
+    grossProfitCar:  getRow(['Gross Profit - Car Sales']),
+    grossPerCar:     getRow(['Total Gross Profit per Car ($/Car)', 'Total Gross Profit per Car', 'Gross Profit per Car']),
+    // ── Service ──
+    revService:      getRow(['Total Revenue - Service', 'Revenue - Service Jobs (Charge/Cash)', 'Revenue - Service Jobs']),
+    cogsService:     getRow(['Total COGS - Service', 'COGS - Service Jobs (Charge/Cash)', 'COGS - Service Jobs']),
+    grossProfitSvc:  getRow(['Gross Profit - Service']),
+    // ── Backend / Warranties ──
+    revBackend:      getRow(['Total Revenue - Backend Warranties and Vehicle Products', 'Total Revenue - Backend Warranties', 'Revenue - Backend', 'Backend Revenue', 'Total Backend Revenue']),
+    cogsBackend:     getRow(['Total COGS - Backend Warranties and Vehicle Products', 'Total COGS - Backend', 'COGS - Backend']),
+    grossBackend:    getRow(['Gross Profit - Backend Warranties and Vehicle Products', 'Gross Profit - Backend']),
+    // ── Payroll / Contractors ──
+    w2Wages:         getRow(['W2 Wages - Sako', 'W2 Wages', 'Salaries and Wages']),
+    totalContractors:getRow(['Total Contractors (1099)', 'Total Contractors', 'Contractors (1099)']),
+    // ── Marketing ──
+    autoMoxie:       getRow(['AutoMoxie']),
+    carFax:          getRow(['CarFax', 'Carfax']),
+    carGurus:        getRow(['CarGurus', 'Car Gurus']),
+    totalMarketing:  getRow(['Total Marketing', 'Marketing Expenses', 'Advertising & Marketing', 'Advertising', 'Marketing']),
+    // ── OPEX ──
+    rent:            getRow(['Rent & Utilities', 'Total Rent', 'Rent']),
+    floorInt:        getRow(['Floorplan Interest', 'Floor Plan Interest', 'Floor Interest']),
+    totalOpex:       getRow(['Total OPEX', 'Total Operating Expenses', 'Operating Expenses', 'Total Expenses']),
+    operatingIncome: getRow(['OPERATING INCOME', 'Operating Income']),
+    // ── Below the line ──
+    salesTaxLine:    getRow(['Sales Taxes & Other Expenses', 'Sales Tax Expense']),
+    totalTotalOpex:  getRow(['Total Total OPEX']),
+    netIncome:       getRow(['NET INCOME', 'Net Income', 'Net Profit / Loss', 'Net Ordinary Income', 'Net Profit']),
+    avgTaxPerCar:    getRow(['Avg. $ Tax/Car Sold', 'Avg $ Tax/Car Sold', 'Avg Tax/Car']),
+    // ── Fallback ──
+    grossProfit:     getRow(['Gross Profit']),
   };
 
   return { monthLabels, numMonths, rows };
+}
+
+// ── Outstanding titles table builder ──
+// Normalise a vehicle name for fuzzy matching (strip punctuation, collapse spaces)
+function normVehicle(v) {
+  return (v || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function buildTitlesTable(rows) {
+  var trulyOut    = rows.filter(function (t) { return !t.dts; });
+  var recentNoDts = trulyOut.filter(function (t) { return t.daysOut <= 99; });
+  var oldNoDts    = trulyOut.filter(function (t) { return t.daysOut >  99; });
+  var dtsProc     = rows.filter(function (t) { return t.dts && t.dts.status === 'processed'; });
+  var dtsPend     = rows.filter(function (t) { return t.dts && t.dts.status !== 'processed'; });
+
+  function dtsCell(t) {
+    if (!t.dts) return '<span style="color:var(--red);font-size:11px;font-weight:700">&#9888; Not in DTS</span>';
+    if (t.dts.status === 'processed')
+      return '<span style="color:var(--green);font-size:11px;font-weight:700">&#10003; DTS Processed</span><br>'
+           + '<span style="font-size:10px;color:var(--muted)">' + t.dts.transferDate + '</span>';
+    return '<span style="color:var(--yellow);font-size:11px;font-weight:700">&#8987; DTS Pending</span><br>'
+         + '<span style="font-size:10px;color:var(--muted)">' + t.dts.transferDate + '</span>';
+  }
+
+  function makeRow(t, i, dimmed) {
+    var badge      = t.daysOut > 60 ? 'badge-red' : t.daysOut > 30 ? 'badge-yellow' : 'badge-blue';
+    var closedStr  = t.closing.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+    var inHand     = t.received
+      ? '<span style="color:var(--green);font-weight:700">&#10003; Yes</span>'
+      : '<span style="color:var(--muted)">&#10007; No</span>';
+    return '<tr style="border-bottom:1px solid var(--border);background:' + (i % 2 ? 'var(--card2)' : 'transparent') + ';opacity:' + (dimmed ? '.8' : '1') + '">'
+      + '<td style="padding:7px 10px">' + t.vehicle + '</td>'
+      + '<td style="padding:7px 10px;color:var(--muted)">' + (t.stock || '—') + '</td>'
+      + '<td style="padding:7px 10px;color:var(--muted)">' + closedStr + '</td>'
+      + '<td style="padding:7px 10px;text-align:right"><span class="badge ' + badge + '">' + t.daysOut + 'd</span></td>'
+      + '<td style="padding:7px 10px;text-align:center">' + inHand + '</td>'
+      + '<td style="padding:7px 10px;text-align:center">' + dtsCell(t) + '</td>'
+      + '</tr>';
+  }
+
+  // Always-visible section
+  function sectionRows(label, color, arr, dimmed) {
+    if (!arr.length) return '';
+    return '<tr><td colspan="6" style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:'
+      + color + ';background:var(--card2)">' + label + ' (' + arr.length + ')</td></tr>'
+      + arr.map(function (t, i) { return makeRow(t, i, dimmed); }).join('');
+  }
+
+  // Collapsible section — persists collapse state across renders via window._titlesCollapseState
+  var _cs = window._titlesCollapseState = window._titlesCollapseState || {};
+  window.toggleTitlesSection = function (key) {
+    _cs[key] = !_cs[key];
+    var body    = document.getElementById('titles-sec-' + key);
+    var chevron = document.getElementById('titles-chv-' + key);
+    if (body)    body.style.display   = _cs[key] ? 'none' : '';
+    if (chevron) chevron.textContent  = _cs[key] ? '▶' : '▼';
+  };
+  if (_cs.oldNoDts === undefined) _cs.oldNoDts = true;
+  if (_cs.dtsPend  === undefined) _cs.dtsPend  = true;
+  if (_cs.dtsProc  === undefined) _cs.dtsProc  = true;
+
+  function collapsibleSection(key, label, color, arr, dimmed) {
+    if (!arr.length) return '';
+    var collapsed = _cs[key];
+    var hdr = '<tr style="cursor:pointer;user-select:none" onclick="toggleTitlesSection(\'' + key + '\')">'
+      + '<td colspan="6" style="padding:5px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:'
+      + color + ';background:var(--card2)">' + label + ' (' + arr.length + ')'
+      + ' &nbsp;<span id="titles-chv-' + key + '" style="font-size:11px">' + (collapsed ? '▶' : '▼') + '</span>'
+      + '</td></tr>';
+    return hdr + '<tbody id="titles-sec-' + key + '" style="display:' + (collapsed ? 'none' : '') + '">'
+      + arr.map(function (t, i) { return makeRow(t, i, dimmed); }).join('')
+      + '</tbody>';
+  }
+
+  var gap = dtsProc.length
+    ? '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">&#8505;&#65039; '
+      + dtsProc.length + ' car' + (dtsProc.length !== 1 ? 's' : '')
+      + ' sent via DTS but not yet marked sent in the Title Report &mdash; process gap confirmed.</div>'
+    : '';
+
+  var thead = '<thead><tr style="background:var(--card2);text-align:left">'
+    + '<th style="padding:7px 10px;font-weight:700;border-bottom:2px solid var(--border)">Vehicle</th>'
+    + '<th style="padding:7px 10px;font-weight:700;border-bottom:2px solid var(--border)">Stock</th>'
+    + '<th style="padding:7px 10px;font-weight:700;border-bottom:2px solid var(--border)">Closed</th>'
+    + '<th style="padding:7px 10px;font-weight:700;border-bottom:2px solid var(--border);text-align:right">Days Out</th>'
+    + '<th style="padding:7px 10px;font-weight:700;border-bottom:2px solid var(--border);text-align:center">Title In Hand</th>'
+    + '<th style="padding:7px 10px;font-weight:700;border-bottom:2px solid var(--border);text-align:center">DTS Status</th>'
+    + '</tr></thead>';
+
+  var tbody = '<tbody>'
+    + sectionRows('&#9888; Not in DTS — Action Required (&le;99 days)', 'var(--red)', recentNoDts, false)
+    + '</tbody>'
+    + collapsibleSection('oldNoDts', '&#128197; Not in DTS — Older than 99 Days',       'var(--orange)', oldNoDts, false)
+    + collapsibleSection('dtsPend',  '&#8987; DTS Pending',                              'var(--yellow)', dtsPend,  false)
+    + collapsibleSection('dtsProc',  '&#10003; Sent via DTS — Update Title Report',      'var(--green)',  dtsProc,  true);
+
+  return gap + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + thead + tbody + '</table></div>';
 }
 
 // ── Sheet text section splitter (used by financial page) ──
