@@ -7,8 +7,9 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Uploads directory — data files live on Google Drive, not in the repo
-src/uploads/
+# Files and directories to ignore
+autoport-saturday-dashboard/
+update_artifact.py
 
 # Editor
 .vscode/settings.json

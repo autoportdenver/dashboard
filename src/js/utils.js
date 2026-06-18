@@ -61,9 +61,21 @@ function parseCSV(text) {
     const vals = parseCSVLine(l);
     const row = {};
     headers.forEach((h, i) => { row[h.trim().toLowerCase()] = (vals[i] || '').trim(); });
+    // _cols: raw values by 0-based column index (A=0, B=1, … Z=25, AA=26 …)
+    row._cols = vals.map(v => (v || '').trim());
     return row;
-  }).filter(r => Object.values(r).some(v => v));
+  }).filter(r => Object.entries(r).some(([k, v]) => k !== '_cols' && v));
 }
+
+// Column letter → 0-based index helper (A=0, B=1, … Z=25, AA=26 …)
+function colIdx(letter) {
+  letter = letter.toUpperCase();
+  let n = 0;
+  for (let i = 0; i < letter.length; i++) n = n * 26 + (letter.charCodeAt(i) - 64);
+  return n - 1;
+}
+// Convenience: get raw cell value by column letter from a row that has _cols
+function col(row, letter) { return (row._cols || [])[colIdx(letter)] || ''; }
 
 function parseCSVLine(line) {
   const result = [];
