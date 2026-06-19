@@ -320,7 +320,7 @@ function renderMetrics(el, dealRows, leadsRows, itemRows, salesLogData, errHtml)
               </div>
             </div>
             <!-- Warranty row — always shown, even if 0 -->
-            <div style="margin:6px 0 2px 36px;display:flex;align-items:center;gap:8px;background:${s.warrantyUnits>0?'#ede9fe':'var(--card2)'};border-radius:6px;padding:6px 10px">
+            <div style="margin:6px 0 2px 36px;display:flex;align-items:center;gap:8px;background:${s.warrantyUnits>0?'rgba(139,92,246,.08)':'var(--card2)'};border-radius:6px;padding:6px 10px;border:1px solid ${s.warrantyUnits>0?'rgba(139,92,246,.18)':'transparent'}">
               <span style="font-size:16px">🛡</span>
               <div style="flex:1">
                 <span style="font-size:11px;font-weight:700;color:${s.warrantyUnits>0?'var(--accent2)':'var(--muted)'}">${s.warrantyUnits>0?`${s.warrantyUnits%1===0?s.warrantyUnits:s.warrantyUnits.toFixed(1)} Warranty Deal${s.warrantyUnits!==1?'s':''}` : 'No warranties this period'}</span>
@@ -366,17 +366,17 @@ function renderMetrics(el, dealRows, leadsRows, itemRows, salesLogData, errHtml)
         <!-- Outstanding / Available split -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <!-- Outstanding (used) -->
-          <div style="background:#fff7ed;border:2px solid var(--orange);border-radius:10px;padding:14px 16px">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--orange);margin-bottom:4px">OUTSTANDING (USED)</div>
-            <div style="font-size:28px;font-weight:800;color:var(--orange)">${fmt$(currentFloorBalance)}</div>
+          <div style="background:rgba(249,115,22,.06);border:1px solid rgba(249,115,22,.2);border-radius:8px;padding:14px 16px">
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--orange);margin-bottom:4px;opacity:.75">Outstanding (Used)</div>
+            <div style="font-size:28px;font-weight:700;color:var(--orange)">${fmt$(currentFloorBalance)}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:3px">
               as of <b>${floorBalanceAsOf}</b><br>
               <span style="font-size:10px">Total drawn: ${fmt$(allFloorNew)} · Total paid: ${fmt$(allFloorPaid)}</span>
             </div>
           </div>
           <!-- Available capacity -->
-          <div id="floor-avail-card" style="background:${floorCreditLimit>0?'#f0fdf4':'var(--card2)'};border:2px solid ${floorCreditLimit>0?'var(--green)':'var(--border)'};border-radius:10px;padding:14px 16px">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:${floorCreditLimit>0?'var(--green)':'var(--muted)'};margin-bottom:4px">AVAILABLE CAPACITY</div>
+          <div id="floor-avail-card" style="background:${floorCreditLimit>0?'rgba(16,185,129,.06)':'var(--card2)'};border:1px solid ${floorCreditLimit>0?'rgba(16,185,129,.2)':'var(--border)'};border-radius:8px;padding:14px 16px">
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:${floorCreditLimit>0?'var(--green)':'var(--muted)'};margin-bottom:4px;opacity:.75">Available Capacity</div>
             <div style="font-size:28px;font-weight:800;color:${floorCreditLimit>0?'var(--green)':'var(--muted)'}">
               ${floorCreditLimit>0 ? fmt$(floorCreditLimit - currentFloorBalance) : '—'}
             </div>

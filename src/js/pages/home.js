@@ -38,12 +38,19 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRow
   const lastY = thisM === 0 ? thisY - 1 : thisY;
 
   const soldThis = dealRows.filter(r => r._isSold && isSameMonth(r._date, thisY, thisM));
-  const soldLast = dealRows.filter(r => r._isSold && isSameMonth(r._date, lastY, lastM));
+  const soldLast = dealRows.filter(r => r._isSold && isSameMonth(r._date, lastY, lastM) && r._date.getDate() <= now.getDate());
   const grossThis = soldThis.reduce((s,r) => s + (r._profit||0), 0);
   const grossLast = soldLast.reduce((s,r) => s + (r._profit||0), 0);
 
-  const auctionThis = itemRows.filter(r => { const d=parseDate(r.date); return d && isSameMonth(d,thisY,thisM) && detectAuction(r); });
-  const auctionLast = itemRows.filter(r => { const d=parseDate(r.date); return d && isSameMonth(d,lastY,lastM) && detectAuction(r); });
+  // PURCHASED THIS MONTH — inventory in-date (col F), more reliable than auction detection
+  const invPurchasedThis = invRows.filter(r => {
+    const d = parseDate(col(r, 'F'));
+    return d && isSameMonth(d, thisY, thisM) && (col(r, 'B') || '').trim();
+  });
+  const invPurchasedLast = invRows.filter(r => {
+    const d = parseDate(col(r, 'F'));
+    return d && isSameMonth(d, lastY, lastM) && d.getDate() <= now.getDate() && (col(r, 'B') || '').trim();
+  });
 
   const brandCt = {};
   soldThis.forEach(r => { const b=r._make||'Unknown'; brandCt[b]=(brandCt[b]||0)+1; });
@@ -66,28 +73,32 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRow
   //  Uses column-index access via col(r._raw, letter)
   // ══════════════════════════════════════════════
 
-  // 1. Consignment Payable (Deal Detail): col D starts with C → col O must not be $0 unless col S has value
+  // 1. Consignment Payable (Deal Detail): stock starts with C → must have Purchase Cost (col N) or Consignment Payable (col O)
   const ddConsignment = dealRows.filter(r => {
     if (!r._isSold) return false;
-    const stockVal = col(r._raw, 'D');
+    const stockVal = (r._stock || '').trim();
     if (!stockVal.toUpperCase().startsWith('C')) return false;
-    const oVal = parseMoney(col(r._raw, 'O'));
-    const sVal = parseMoney(col(r._raw, 'S'));
-    const oOk  = !isNaN(oVal) && oVal !== 0;
-    const sOk  = !isNaN(sVal) && sVal !== 0;
-    return !oOk && !sOk;
+    const nVal = parseMoney(col(r._raw, 'N')); // Purchase Cost
+    const oVal = parseMoney(col(r._raw, 'O')); // Consignment Payable Cost
+    const hN   = parseMoney(getField(r._raw, 'inventory purchase cost', 'purchase cost'));
+    const hO   = parseMoney(getField(r._raw, 'consignment payable cost', 'consignment payable'));
+    const hasCost = (!isNaN(nVal) && nVal > 0) || (!isNaN(oVal) && oVal > 0) ||
+                    (!isNaN(hN)   && hN   > 0) || (!isNaN(hO)   && hO   > 0);
+    return !hasCost;
   });
 
-  // 2. Flooring Payable (Deal Detail): col E has "Westlake Flooring" → col P > 0 unless col S has value
+  // 2. Flooring Payable (Deal Detail): col E has "Westlake Flooring" → must have Purchase Cost (col N) or Flooring Payable (col P)
   const ddFlooringPayable = dealRows.filter(r => {
     if (!r._isSold) return false;
     const flags = col(r._raw, 'E').toLowerCase();
     if (!flags.includes('westlake flooring')) return false;
-    const pVal = parseMoney(col(r._raw, 'P'));
-    const sVal = parseMoney(col(r._raw, 'S'));
-    const pOk  = !isNaN(pVal) && pVal > 0;
-    const sOk  = !isNaN(sVal) && sVal !== 0;
-    return !pOk && !sOk;
+    const nVal = parseMoney(col(r._raw, 'N')); // Purchase Cost
+    const pVal = parseMoney(col(r._raw, 'P')); // Flooring Payable Cost
+    const hN   = parseMoney(getField(r._raw, 'inventory purchase cost', 'purchase cost'));
+    const hP   = parseMoney(getField(r._raw, 'flooring payable cost', 'flooring payable'));
+    const hasCost = (!isNaN(nVal) && nVal > 0) || (!isNaN(pVal) && pVal > 0) ||
+                    (!isNaN(hN)   && hN   > 0) || (!isNaN(hP)   && hP   > 0);
+    return !hasCost;
   });
 
   // 3. Flooring Fees (Deal Detail): col E has "Westlake Flooring" → col Q > 0
@@ -142,15 +153,15 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRow
     return !!c;                  // blank mileage is only a problem when col C has a value
   });
 
-  // 9. Consignment Payable (Inventory): col B starts with C → col K not $0, unless col L > $300
+  // 9. Consignment Payable (Inventory): col B starts with C → must have Purchase Cost (col I) or Consignment Payable (col K)
+  // Inventory column layout: A=Status, B=Stock#, C=Vehicle, D=VIN, E=Miles, F=InDate,
+  //   G=Age, H=Color, I=PurchaseCost, J=FlooringPayable, K=ConsignmentPayable, L=TotalCost, M=Price, N=Leads
   const invConsignment = activeInv.filter(r => {
     const stockB = col(r, 'B').trim();
     if (!stockB.toUpperCase().startsWith('C')) return false;
-    const kVal = parseMoney(col(r, 'K'));
-    const lVal = parseMoney(col(r, 'L'));
-    const kOk  = !isNaN(kVal) && kVal !== 0;
-    const lOk  = !isNaN(lVal) && lVal > 300;
-    return !kOk && !lOk;
+    const iVal = parseMoney(col(r, 'I')); // Purchase Cost
+    const kVal = parseMoney(col(r, 'K')); // Consignment Payable Cost
+    return !((!isNaN(iVal) && iVal > 0) || (!isNaN(kVal) && kVal > 0));
   });
 
   // ══════════════════════════════════════════════
@@ -255,21 +266,37 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRow
 
   const MAX_ITEMS = 8;
 
-  // ── To-Do column builder ──
+  // ── To-Do column builder (collapsible cards) ──
+  let _todoIdx = 0;
   function buildTodoCol(icon, color, title, items, renderFn, emptyMsg) {
-    const badge = items.length
-      ? ' <span style="background:' + color + ';color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">' + items.length + '</span>'
-      : '';
+    const id = 'tfl' + (_todoIdx++);
+    const count = items.length;
+    const badge = count
+      ? '<span style="display:inline-flex;align-items:center;min-width:20px;height:20px;background:' + color + ';color:#fff;border-radius:10px;padding:0 6px;font-size:10px;font-weight:800;margin-left:6px">' + count + '</span>'
+      : '<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:rgba(16,185,129,.12);color:rgba(16,185,129,.85);border-radius:10px;font-size:11px;font-weight:700;margin-left:6px">✓</span>';
     let body;
-    if (!items.length) {
-      body = '<div style="color:var(--green);font-size:12px;padding:8px 0">' + (emptyMsg||'✅ All clear') + '</div>';
+    if (!count) {
+      body = '<div style="color:var(--green);font-size:12px;padding:6px 2px">' + (emptyMsg || '✅ All clear') + '</div>';
     } else {
-      body = items.slice(0,MAX_ITEMS).map(renderFn).join('');
-      if (items.length > MAX_ITEMS) body += '<div style="font-size:11px;color:var(--muted);margin-top:4px">+' + (items.length-MAX_ITEMS) + ' more</div>';
+      body = items.slice(0, MAX_ITEMS).map(renderFn).join('');
+      if (count > MAX_ITEMS) body += '<div style="font-size:11px;color:var(--muted);margin-top:6px;padding-top:4px;border-top:1px solid var(--border)">+ ' + (count - MAX_ITEMS) + ' more…</div>';
     }
-    return '<div style="min-width:0;border-right:1px solid var(--border);padding-right:14px;padding-left:2px">' +
-      '<div style="font-size:10px;font-weight:700;color:' + color + ';text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">' +
-      icon + ' ' + title + badge + '</div>' + body + '</div>';
+    const open = count > 0;
+    return (
+      '<div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--card2)">' +
+        '<div onclick="toggleTodoFlag(\'' + id + '\')" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer;user-select:none;gap:8px' + (count ? ';background:rgba(0,0,0,.03)' : '') + '">' +
+          '<div style="display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden">' +
+            '<span style="font-size:13px;flex-shrink:0">' + icon + '</span>' +
+            '<span style="font-size:10px;font-weight:700;color:' + (count ? color : 'var(--muted)') + ';text-transform:uppercase;letter-spacing:.6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + title + '</span>' +
+            badge +
+          '</div>' +
+          '<span id="' + id + '_arr" style="font-size:12px;color:var(--muted);flex-shrink:0">' + (open ? '▾' : '▸') + '</span>' +
+        '</div>' +
+        '<div id="' + id + '" style="display:' + (open ? 'block' : 'none') + ';padding:10px 14px;border-top:1px solid var(--border)">' +
+          body +
+        '</div>' +
+      '</div>'
+    );
   }
 
   const todoHtml = [
@@ -329,78 +356,122 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRow
     return html;
   })();
 
+  // ── YTD monthly data ──
+  const ytdGross = Array(12).fill(0);
+  const ytdUnits = Array(12).fill(0);
+  dealRows.forEach(r => {
+    if (!r._isSold || !r._date || r._date.getFullYear() !== thisY) return;
+    ytdGross[r._date.getMonth()] += r._profit || 0;
+    ytdUnits[r._date.getMonth()]++;
+  });
+  const ytdMax    = Math.max(...ytdGross.map(Math.abs), 1);
+  const ytdTotal  = ytdGross.reduce((s, v) => s + v, 0);
+  const ytdBars   = monthNames.slice(0, thisM + 1).map((mn, mi) => {
+    const g    = ytdGross[mi];
+    const u    = ytdUnits[mi];
+    const pct  = Math.round(Math.max(0, g) / ytdMax * 100);
+    const prev = mi > 0 ? ytdGross[mi - 1] : null;
+    const mom  = (prev !== null && prev !== 0) ? Math.round((g - prev) / Math.abs(prev) * 100) : null;
+    const isCur = mi === thisM;
+    const fill  = g < 0 ? 'rgba(239,68,68,.5)' : isCur ? 'rgba(45,139,255,.75)' : 'rgba(255,255,255,.13)';
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;min-width:0">
+      <div style="font-size:9.5px;font-weight:${isCur?'700':'400'};color:${g>=0?(isCur?'var(--text)':'var(--text2)'):'var(--red)'};white-space:nowrap">${g!==0?fmt$(g):'—'}</div>
+      <div style="width:100%;height:80px;display:flex;align-items:flex-end">
+        <div style="width:100%;height:${Math.max(pct,g!==0?3:0)}%;background:${fill};border-radius:3px 3px 0 0"></div>
+      </div>
+      <div style="font-size:8.5px;color:${mom!==null?(mom>=0?'rgba(16,185,129,.8)':'rgba(239,68,68,.8)'):'transparent'};font-weight:600">${mom!==null?(mom>=0?'+':'')+mom+'%':'-'}</div>
+      <div style="font-size:9px;color:${isCur?'var(--text)':'var(--muted)'};font-weight:${isCur?'700':'400'}">${mn}</div>
+    </div>`;
+  }).join('');
+  const ytdAvgGross  = soldThis.length ? Math.round(grossThis / soldThis.length) : 0;
+  const ytdUnitTotal = ytdUnits.reduce((s,v) => s + v, 0);
+
   // ── Build HTML ──
   el.innerHTML = errHtml + `
-  <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
-    📦 Inventory: ${invRows.length} rows &nbsp;|&nbsp;
-    🤝 Deals: ${dealRows.length} rows &nbsp;|&nbsp;
-    🔧 Item Costs: ${itemRows.length} rows
-  </div>
 
-  <!-- Stats Row -->
-  <div class="grid-4" style="margin-bottom:16px">
-    <div class="stat-card accent">
-      <div class="label">Sold This Month (${monthNames[thisM]})</div>
-      <div class="val">${soldThis.length}</div>
-      <div class="sub">vs ${soldLast.length} last month</div>
+  <!-- ── KPI Strip ── -->
+  <div class="kpi-strip" style="margin-bottom:18px">
+    <div class="kpi-cell">
+      <div class="kpi-label">Units Sold · ${monthNames[thisM]}</div>
+      <div class="kpi-val">${soldThis.length}</div>
+      <div class="kpi-sub">${soldThis.length > soldLast.length ? '↑' : soldThis.length < soldLast.length ? '↓' : '→'} ${soldLast.length} last month</div>
     </div>
-    <div class="stat-card ${grossThis >= 0 ? 'green' : 'red'}">
-      <div class="label">Total Gross Profit (${monthNames[thisM]})</div>
-      <div class="val">${fmt$(grossThis)}</div>
-      <div class="sub">Front + Back combined | Last mo: ${fmt$(grossLast)}</div>
+    <div class="kpi-cell kpi-cell-accent">
+      <div class="kpi-label">Gross Profit · ${monthNames[thisM]}</div>
+      <div class="kpi-val" style="color:${grossThis>=0?'var(--text)':'var(--red)'}">${fmt$(grossThis)}</div>
+      <div class="kpi-sub">Last mo ${fmt$(grossLast)} · avg ${ytdAvgGross?fmt$(ytdAvgGross):' —'}/unit</div>
     </div>
-    <div class="stat-card yellow">
-      <div class="label">Purchased This Month</div>
-      <div class="val">${auctionThis.length}</div>
-      <div class="sub">Last month: ${auctionLast.length}</div>
+    <div class="kpi-cell">
+      <div class="kpi-label">Active Inventory</div>
+      <div class="kpi-val">${activeInv.length}</div>
+      <div class="kpi-sub">${age90p.length > 0 ? age90p.length + ' over 90d · ' : ''}avg age ${activeInv.length ? Math.round(activeInv.reduce((s,r)=>s+(+r.age||0),0)/activeInv.length) : 0}d</div>
     </div>
-    <div class="stat-card">
-      <div class="label">Top Brand This Month</div>
-      <div class="val" style="font-size:20px">${topBrand[0]}</div>
-      <div class="sub">${topBrand[1]} unit${topBrand[1]===1?'':'s'}</div>
+    <div class="kpi-cell">
+      <div class="kpi-label">YTD · ${thisY}</div>
+      <div class="kpi-val">${fmt$(ytdTotal)}</div>
+      <div class="kpi-sub">${ytdUnitTotal} units · top brand ${topBrand[0]}</div>
     </div>
   </div>
 
-  <!-- Bulletin Board -->
-  <div class="card" style="margin-bottom:16px">
+  <!-- ── YTD Gross Profit Chart ── -->
+  <div class="sec-rule" style="margin-bottom:12px"><span>Year to Date</span></div>
+  <div class="card" style="margin-bottom:18px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px">
+      <div>
+        <div style="font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)">YTD Gross Profit ${thisY}</div>
+        <div style="font-size:22px;font-weight:700;color:${ytdTotal>=0?'var(--text)':'var(--red)'};margin-top:3px;letter-spacing:-.5px">${fmt$(ytdTotal)}</div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);text-align:right">${ytdUnitTotal} units sold<br><span style="color:var(--muted)">${ytdUnitTotal?fmt$(Math.round(ytdTotal/ytdUnitTotal)):' —'} avg/unit</span></div>
+    </div>
+    <div style="display:flex;gap:4px;align-items:stretch">${ytdBars || '<div style="color:var(--muted);font-size:12px">No deal data yet for ' + thisY + '</div>'}</div>
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:20px;font-size:11px;color:var(--text2)">
+      <span><span style="display:inline-block;width:8px;height:8px;background:rgba(45,139,255,.75);border-radius:2px;margin-right:4px"></span>Current month</span>
+      <span><span style="display:inline-block;width:8px;height:8px;background:rgba(255,255,255,.13);border-radius:2px;margin-right:4px"></span>Prior months</span>
+    </div>
+  </div>
+
+  <!-- ── Section rule: Bulletin ── -->
+  <div class="sec-rule" style="margin-bottom:10px"><span>Bulletin Board</span></div>
+  <div class="card" style="margin-bottom:22px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-      <h3 style="margin-bottom:0">📌 Bulletin Board</h3>
-      <button class="btn btn-sm" onclick="saveKeepInMind()">💾 Save</button>
+      <div style="font-size:11px;color:var(--muted)">Team notes — stays pinned across sessions</div>
+      <button class="btn btn-sm" onclick="saveKeepInMind()">Save</button>
     </div>
     <div id="keep-in-mind" class="notes-area" contenteditable="true" spellcheck="false">${keepInMind}</div>
   </div>
 
-  <!-- ══ TO-DO FLAGS (full width, 3-column grid) ══ -->
-  <div class="card" style="margin-bottom:16px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h3 style="margin-bottom:0">⚡ To-Do / Flags</h3>
-      ${totalFlags > 0
-        ? '<span style="font-size:12px;background:var(--red);color:#fff;border-radius:12px;padding:2px 10px;font-weight:700">' + totalFlags + ' items need attention</span>'
-        : '<span style="font-size:12px;color:var(--green);font-weight:600">✅ All clear</span>'}
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+  <!-- ── Section rule: Flags ── -->
+  <div class="sec-rule" style="margin-bottom:10px">
+    <span>Action Items</span>
+    ${totalFlags > 0
+      ? '<span style="font-size:10px;background:rgba(239,68,68,.15);color:rgba(239,68,68,.85);border:1px solid rgba(239,68,68,.2);border-radius:4px;padding:2px 8px;font-weight:700;letter-spacing:.5px">' + totalFlags + ' open</span>'
+      : '<span style="font-size:10px;color:rgba(16,185,129,.6);font-weight:600">All clear</span>'}
+  </div>
+  <div class="card" style="margin-bottom:22px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
       ${todoHtml}
     </div>
   </div>
 
-  <!-- ══ HOTTEST CARS + ACTIVE/INACTIVE ══ -->
-  <div class="grid-2" style="margin-bottom:16px">
-    <!-- Hottest Cars -->
+  <!-- ── Section rule: Inventory ── -->
+  <div class="sec-rule" style="margin-bottom:10px"><span>Inventory</span></div>
+  <div class="grid-2" style="margin-bottom:22px">
+    <!-- Hottest cars by leads -->
     <div class="card">
-      <h3>🔥 Hottest Active Inventory (by Leads)</h3>
+      <div style="font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:12px">Hottest Active (by Leads)</div>
       ${hottestCars.length === 0
-        ? '<div style="color:var(--muted);font-size:13px">No lead data in inventory report (col N).</div>'
-        : '<table class="data-table" style="width:100%"><thead><tr><th>#</th><th>Vehicle</th><th>Stock</th><th style="text-align:right">Leads</th></tr></thead><tbody>' +
+        ? '<div style="color:var(--muted);font-size:12px">No lead data in inventory report (col N).</div>'
+        : '<table class="data-table"><thead><tr><th>#</th><th>Vehicle</th><th>Stock</th><th style="text-align:right">Leads</th></tr></thead><tbody>' +
           hottestCars.map((c,i) => '<tr>' +
-            '<td style="color:var(--muted)">' + (i+1) + '</td>' +
+            '<td style="color:var(--muted);width:24px">' + (i+1) + '</td>' +
             '<td>' + c.vehicle + '</td>' +
-            '<td><b>' + c.stock + '</b></td>' +
-            '<td style="text-align:right;font-weight:700;color:var(--accent)">' + c.leads + '</td>' +
+            '<td style="color:var(--text2);font-size:10px;letter-spacing:1px">' + c.stock.toUpperCase() + '</td>' +
+            '<td style="text-align:right;font-weight:600;color:var(--text)">' + c.leads + '</td>' +
             '</tr>').join('') +
           '</tbody></table>'}
     </div>
 
-    <!-- Active vs Inactive -->
+    <!-- Inventory aging -->
     <div class="card">
       <h3>📊 Inventory Status</h3>
       <div class="grid-2" style="margin-bottom:14px">
@@ -415,70 +486,78 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRow
           <div class="sub">${invRows.length} total in report</div>
         </div>
       </div>
-      <!-- Aging summary for active -->
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px">Active Inventory Aging</div>
       ${[
-        { label:'0–30 days',  items:age0_30,  color:'var(--green)' },
-        { label:'31–60 days', items:age31_60, color:'var(--yellow)' },
-        { label:'61–90 days', items:age61_90, color:'var(--orange)' },
+        { label:'0–30 days',  items:age0_30,  color:'rgba(100,140,200,.35)' },
+        { label:'31–60 days', items:age31_60, color:'rgba(100,140,200,.35)' },
+        { label:'61–90 days', items:age61_90, color:'rgba(100,140,200,.35)' },
         { label:'90+ days',   items:age90p,   color:'var(--red)' },
       ].map(({label,items,color}) => {
         const pct = activeInv.length ? Math.min(100,(items.length/activeInv.length)*100) : 0;
-        const totalCost = items.reduce((s,r)=>s+(parseMoney(r['total cost']||r[' total cost'])||0),0);
+        const totalCostBucket = items.reduce((s,r)=>s+(parseMoney(r['total cost']||r[' total cost'])||0),0);
         return '<div class="aging-band">' +
           '<span class="range">' + label + '</span>' +
-          '<div class="bar"><div class="fill" style="width:' + pct + '%;background:' + color + '">' +
-          (items.length>0?items.length:'') + '</div></div>' +
+          '<div class="bar"><div class="fill" style="width:' + pct + '%;background:' + color + '">' + (items.length>0?items.length:'') + '</div></div>' +
           '<span style="font-size:12px;color:var(--muted);width:24px;text-align:right">' + items.length + '</span>' +
-          (totalCost>0?'<span style="font-size:11px;color:var(--muted);width:72px;text-align:right">'+fmt$(totalCost)+'</span>':'') +
+          (totalCostBucket>0?'<span style="font-size:11px;color:var(--muted);width:72px;text-align:right">'+fmt$(totalCostBucket)+'</span>':'') +
           '</div>';
       }).join('')}
       <div style="font-size:11px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
         Avg age: <b style="color:var(--text)">${activeInv.length?Math.round(activeInv.reduce((s,r)=>s+(+r.age||0),0)/activeInv.length):0}d</b>
-        &nbsp;|&nbsp;
+        &nbsp;·&nbsp;
         Total cost: <b style="color:var(--text)">${fmt$(activeInv.reduce((s,r)=>s+(parseMoney(r['total cost']||r[' total cost'])||0),0))}</b>
       </div>
     </div>
   </div>
 
-  <!-- ══ OUTSTANDING TITLES ══ -->
-  <div class="card" style="margin-bottom:16px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <h3 style="margin-bottom:0">📋 Outstanding Titles <span style="font-size:11px;font-weight:400;color:var(--muted)">(Apr 11, 2026 and later)</span></h3>
-      ${outstandingTitles.length
-        ? '<span style="font-size:12px;color:var(--muted)">' + outstandingTitles.length + ' title' + (outstandingTitles.length!==1?'s':'') + ' not yet sent</span>'
-        : ''}
+  <!-- ── Section rule: Titles ── -->
+  <div class="sec-rule" style="margin-bottom:10px">
+    <span>Outstanding Titles</span>
+    <span style="font-size:9px;color:var(--muted);font-weight:400">Apr 11, 2026+</span>
+    ${outstandingTitles.length ? '<span style="font-size:10px;color:var(--text2)">' + outstandingTitles.length + ' outstanding</span>' : ''}
+  </div>
+  <div class="card" style="margin-bottom:22px">${titlesTable}</div>
+
+  <!-- ── Section rule: Last Month ── -->
+  <div class="sec-rule" style="margin-bottom:10px"><span>${monthNames[lastM]} ${lastY}</span></div>
+  <div class="kpi-strip" style="margin-bottom:20px">
+    <div class="kpi-cell">
+      <div class="kpi-label">Units Sold</div>
+      <div class="kpi-val">${soldLast.length}</div>
     </div>
-    ${titlesTable}
+    <div class="kpi-cell">
+      <div class="kpi-label">Total Gross</div>
+      <div class="kpi-val" style="font-size:22px">${fmt$(grossLast)}</div>
+      <div class="kpi-sub">Front + Back</div>
+    </div>
+    <div class="kpi-cell">
+      <div class="kpi-label">Avg Gross / Unit</div>
+      <div class="kpi-val" style="font-size:22px">${soldLast.length ? fmt$(Math.round(grossLast/soldLast.length)) : '—'}</div>
+    </div>
+    <div class="kpi-cell">
+      <div class="kpi-label">Purchased</div>
+      <div class="kpi-val">${invPurchasedLast.length}</div>
+      <div class="kpi-sub">vehicles acquired</div>
+    </div>
   </div>
 
-  <!-- Last Month Summary -->
-  <div class="card" style="margin-bottom:16px">
-    <h3>Last Month Summary — ${monthNames[lastM]} ${lastY}</h3>
-    <div class="grid-4" style="margin-bottom:0">
-      <div class="stat-card" style="background:var(--card2)">
-        <div class="label">Units Sold</div>
-        <div class="val">${soldLast.length}</div>
-      </div>
-      <div class="stat-card" style="background:var(--card2)">
-        <div class="label">Total Gross Profit</div>
-        <div class="val" style="font-size:20px">${fmt$(grossLast)}</div>
-        <div class="sub">Front + Back combined</div>
-      </div>
-      <div class="stat-card" style="background:var(--card2)">
-        <div class="label">Avg Gross / Unit</div>
-        <div class="val" style="font-size:20px">${soldLast.length ? fmt$(grossLast/soldLast.length) : '—'}</div>
-      </div>
-      <div class="stat-card" style="background:var(--card2)">
-        <div class="label">Purchased</div>
-        <div class="val">${auctionLast.length}</div>
-      </div>
-    </div>
+  <div style="font-size:10px;color:var(--muted);margin-bottom:20px;padding-bottom:10px">
+    📦 Inventory: ${invRows.length} rows &nbsp;·&nbsp; 🤝 Deals: ${dealRows.length} rows &nbsp;·&nbsp; 🔧 Item Costs: ${itemRows.length} rows
   </div>
   `;
 }
 
 function saveKeepInMind() {
   keepInMind = document.getElementById('keep-in-mind').innerText;
-  window.sendPrompt && window.sendPrompt('Save keep-in-mind note: ' + keepInMind.substring(0,200));
+  window.sendPrompt && window.sendPrompt('Save keep-in-mind note: ' + keepInMind.substring(0, 200));
+}
+
+// ── Collapsible to-do flag cards ──
+function toggleTodoFlag(id) {
+  const body  = document.getElementById(id);
+  const arrow = document.getElementById(id + '_arr');
+  if (!body) return;
+  const nowOpen = body.style.display !== 'none';
+  body.style.display  = nowOpen ? 'none' : 'block';
+  if (arrow) arrow.textContent = nowOpen ? '▸' : '▾';
 }

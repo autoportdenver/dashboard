@@ -8,7 +8,19 @@
 
 // ── Deal Detail (Dealr.Cloud export) ──
 function buildDealRows(rawRows) {
-  return rawRows.map(row => {
+  // Actual Deal Detail Report columns from Dealr.Cloud:
+  // "Inventory Vehicle Name", Status, "Inventory Status", "Inventory Stock Number",
+  // "Inventory In Date", "Closing Date", "Actual Miles", "Inventory Vehicle VIN",
+  // "Inventory Age", "Inventory Purchase Cost", "Inventory Recon Cost",
+  // "Inventory Total Cost", "Pricing Sale Price", "Pricing Total Sale",
+  // "Pricing Backend Profit", etc.
+  //
+  // Excluded stocks: data-entry errors that should be ignored across all calculations.
+  const EXCLUDED_STOCKS = new Set(['2656']); // 2656: BMW X5 purchase cost / sale price transposition
+  return rawRows.filter(row => {
+    const s = (getField(row, 'inventory stock number', 'stock number', 'stock #', 'stock') || '').trim();
+    return !EXCLUDED_STOCKS.has(s);
+  }).map(row => {
     const vehicleName = getField(row, 'inventory vehicle name', 'vehicle name', 'vehicle') || '';
     const parts  = vehicleName.trim().split(/\s+/);
     const year   = parts[0] || '';
@@ -18,19 +30,18 @@ function buildDealRows(rawRows) {
     const stock   = getField(row, 'inventory stock number', 'stock number', 'stock #', 'stock');
     const closing = parseDate(getField(row, 'closing date', 'close date', 'date'));
     const inDate  = parseDate(getField(row, 'inventory in date', 'date in', 'in date'));
-    const miles   = parseMoney(getField(row, 'actual miles', 'mileage', 'miles').replace(/,/g, ''));
+    const miles   = parseMoney((getField(row, 'actual miles', 'mileage', 'miles') || '').replace(/,/g, ''));
 
+    // Status comes from col B — "Sold Retail", "Unwound", "Pending", etc.
     const status  = (getField(row, 'status', 'deal status') || '').toLowerCase();
-    const isSold  = status === 'sold retail' ||
-                    (!!closing && !status.includes('unwind') && !!status);
+    // Only count as sold if col B explicitly says "Sold Retail" — nothing else qualifies
+    const isSold  = status === 'sold retail';
 
-    const salePrice  = parseMoney(getField(row, 'pricing sale price', 'sale price'));
-    const totalCost  = parseMoney(getField(row, 'inventory total cost', 'total cost'));
-    const backEnd    = parseMoney(getField(row, 'pricing backend profit', 'backend profit'));
-    const frontGross = (!isNaN(salePrice) && !isNaN(totalCost)) ? salePrice - totalCost : NaN;
-    const profit     = !isNaN(frontGross)
-      ? frontGross + (isNaN(backEnd) ? 0 : backEnd)
-      : isNaN(backEnd) ? 0 : backEnd;
+    // Gross = col T (Pricing Sale Price) − col S (Inventory Total Cost).
+    // Use column-letter access directly so current and historical months always use the same columns.
+    const salePrice  = parseMoney(col(row, 'T')); // Pricing Sale Price
+    const totalCost  = parseMoney(col(row, 'S')); // Inventory Total Cost
+    const profit     = (!isNaN(salePrice) && !isNaN(totalCost)) ? salePrice - totalCost : 0;
 
     const sp1 = (getField(row, 'salesperson', 'sales person', 'sp', 'primary sp') || '').toLowerCase().trim();
     const sp2 = (getField(row, 'co salesperson', 'co-sp', 'co sp', 'secondary sp') || '').toLowerCase().trim();

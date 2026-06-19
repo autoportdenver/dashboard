@@ -4,9 +4,8 @@
 //  DRIVE — src/js/drive.js
 //
 //  Priority order for every Drive call:
-//    1. Cowork MCP  (window.cowork — inside Cowork desktop app)
-//    2. Google OAuth (direct Drive v3 REST API — any browser)
-//    3. Local files  (src/uploads/ — handled in data.js as final fallback)
+//    1. Google OAuth (direct Drive v3 REST API — any browser)
+//    2. Local files  (src/uploads/ — handled in data.js as final fallback)
 //
 //  Auth:
 //    GIS library loaded synchronously in index.html.
@@ -14,10 +13,6 @@
 //    requestDriveAccess() — call from a user-gesture button.
 //    onDriveReady()   — defined in dashboard.js; called after token granted.
 // ══════════════════════════════════════════════
-
-// ── Cowork MCP tool identifiers ──
-const DRIVE_READ_MCP   = 'mcp__d97b1518-9016-4011-a420-7ec2458ff224__read_file_content';
-const DRIVE_SEARCH_MCP = 'mcp__d97b1518-9016-4011-a420-7ec2458ff224__search_files';
 
 // ── OAuth ──
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
@@ -48,7 +43,7 @@ function requestDriveAccess() {
 }
 
 function isDriveAvailable() {
-  return !!(window.cowork || _accessToken);
+  return !!_accessToken;
 }
 
 // ── Cowork MCP helpers (parse varied response shapes) ──
@@ -100,39 +95,32 @@ async function driveApiFetch(path, params) {
 // ══════════════════════════════════════════════
 
 async function driveRead(fileId) {
-  // 1. Cowork MCP
-  if (window.cowork) {
-    try {
-      const res = await withTimeout(window.cowork.callMcpTool(DRIVE_READ_MCP, { fileId }), 45000, 'Drive read');
-      const txt = extractText(res);
-      if (txt) return txt;
-    } catch (e) { /* fall through */ }
+  if (!_accessToken) throw new Error('Drive: not authenticated');
+
+  // Try direct download first (works for uploaded CSV/binary files)
+  const mediaUrl = DRIVE_API + '/files/' + fileId + '?' + new URLSearchParams({ alt: 'media', supportsAllDrives: 'true' });
+  const res = await fetch(mediaUrl, { headers: { Authorization: 'Bearer ' + _accessToken } });
+
+  if (res.status === 401) { _accessToken = null; throw new Error('Drive session expired — please reconnect.'); }
+  if (res.ok) return res.text();
+
+  // Google Sheets/Docs can't use alt=media — fall back to CSV export
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 403 && body?.error?.errors?.[0]?.reason === 'fileNotDownloadable') {
+    const exportRes = await driveApiFetch('/files/' + fileId + '/export', { mimeType: 'text/csv', supportsAllDrives: 'true' });
+    return exportRes.text();
   }
-  // 2. OAuth
-  if (_accessToken) {
-    const res = await driveApiFetch('/files/' + fileId, { alt: 'media' });
-    return res.text();
-  }
-  throw new Error('Drive: not authenticated');
+
+  const msg = body?.error?.message || '';
+  console.error('Drive read error', res.status, fileId, body);
+  throw new Error('Drive ' + res.status + ': ' + msg.substring(0, 200));
 }
 
 async function driveSearchLatest(folderId) {
-  // 1. Cowork MCP
-  if (window.cowork) {
-    try {
-      const res   = await withTimeout(
-        window.cowork.callMcpTool(DRIVE_SEARCH_MCP, { query: `parentId = '${folderId}'`, pageSize: 20 }),
-        45000, 'Drive search'
-      );
-      const items = extractFileItems(res);
-      if (items.length) return sortByModified(items)[0];
-    } catch (e) { /* fall through */ }
-  }
-  // 2. OAuth
   if (_accessToken) {
     try {
       const res  = await driveApiFetch('/files', {
-        q: `'${folderId}' in parents and trashed=false`,
+        q: `'${folderId}' in parents and trashed=false and mimeType != 'application/vnd.google-apps.folder'`,
         fields: 'files(id,name,modifiedTime)', pageSize: '20',
         supportsAllDrives: 'true', includeItemsFromAllDrives: 'true', corpora: 'allDrives',
       });
@@ -144,18 +132,6 @@ async function driveSearchLatest(folderId) {
 }
 
 async function driveSearchByName(nameFragment) {
-  // 1. Cowork MCP — uses 'title contains' (MCP quirk)
-  if (window.cowork) {
-    try {
-      const res   = await withTimeout(
-        window.cowork.callMcpTool(DRIVE_SEARCH_MCP, { query: `title contains '${nameFragment}'`, pageSize: 10 }),
-        45000, 'Drive name search'
-      );
-      const items = extractFileItems(res);
-      if (items.length) return sortByModified(items)[0];
-    } catch (e) { /* fall through */ }
-  }
-  // 2. OAuth — uses 'name contains' (Drive v3 standard)
   if (_accessToken) {
     try {
       const safe = nameFragment.replace(/'/g, "\\'");

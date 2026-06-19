@@ -45,13 +45,18 @@ function saveKeepInMind() {
 
 // ── Navigation ──
 const PAGE_LOADERS = {
-  home:     loadHome,
-  metrics:  loadMetrics,
-  repair:   loadRepair,
-  meetings: loadMeetings,
+  home:      loadHome,
+  metrics:   loadMetrics,
+  repair:    loadRepair,
+  meetings:  loadMeetings,
+  inventory: loadInventory,
 };
 
 function showPage(name) {
+  // Hero: visible only on home page
+  const hero = document.getElementById('hero');
+  if (hero) hero.classList.toggle('hidden', name !== 'home');
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
@@ -64,6 +69,20 @@ function showPage(name) {
       document.getElementById(name + '-body').innerHTML = errorBox(err.message || String(err));
     });
   }
+}
+
+// ── Update Log Modal ──
+let _logNotes = '';
+function openLogModal() {
+  document.getElementById('log-notes-area').value = _logNotes;
+  document.getElementById('log-modal').classList.add('open');
+}
+function closeLogModal() {
+  document.getElementById('log-modal').classList.remove('open');
+}
+function saveLogNotes() {
+  _logNotes = document.getElementById('log-notes-area').value;
+  closeLogModal();
 }
 
 // ── Global UI helpers ──
@@ -108,21 +127,6 @@ function onDriveReady() {
   // Set up OAuth token client (GIS library already loaded synchronously)
   initDriveAuth();
 
-  // If Cowork MCP is available, skip auth gate and load immediately
-  if (window.cowork) {
-    loaded.home = true;
-    const gate = document.getElementById('auth-gate');
-    if (gate) gate.style.display = 'none';
-    loadHome().catch(err => {
-      document.getElementById('home-body').innerHTML = errorBox(err.message || String(err));
-    });
-    return;
-  }
-
-  // Otherwise try a silent OAuth token request (reuses existing Google session, no popup)
-  // If the user has signed in before, this resolves without a click; if not, auth-gate stays visible.
-  if (_tokenClient) {
-    _tokenClient.requestAccessToken({ prompt: 'none' });
-  }
-  // auth-gate remains visible until onDriveReady() hides it after successful auth
+  // auth-gate remains visible until user clicks "Sign in with Google"
+  // (no silent auth attempt — avoids the brief popup flash on every reload)
 })();

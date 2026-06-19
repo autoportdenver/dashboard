@@ -10,6 +10,19 @@
 </head>
 <body>
 
+<!-- ══════════ HERO ══════════ -->
+<section id="hero">
+  <div id="hero-photo"></div>
+  <canvas id="rain"></canvas>
+  <canvas id="smoke"></canvas>
+  <div id="vignette"></div>
+  <div class="hero-content">
+    <div class="hero-title">AutoPort Denver</div>
+    <div class="hero-sub">Operations Dashboard</div>
+  </div>
+  <div class="scroll-hint" onclick="document.getElementById('hdr').scrollIntoView({behavior:'smooth'})">▾ scroll to dashboard</div>
+</section>
+
 <!-- ══════════ HEADER ══════════ -->
 <div id="hdr">
   <div class="logo" style="display:flex;align-items:center;gap:0;padding:0">
@@ -21,8 +34,26 @@
     <button class="nav-btn" onclick="showPage('metrics')">📊 Operating</button>
     <button class="nav-btn" onclick="showPage('repair')">🔧 Repairs</button>
     <button class="nav-btn" onclick="showPage('meetings')">📅 Meetings</button>
+    <button class="nav-btn" onclick="showPage('inventory')">📦 Inventory</button>
   </nav>
+  <button class="hdr-log-btn" onclick="openLogModal()">📋 Update Log</button>
   <div id="hdr-date"></div>
+</div>
+
+<!-- ══════════ UPDATE LOG MODAL ══════════ -->
+<div id="log-modal" onclick="if(event.target===this)closeLogModal()">
+  <div id="log-modal-box">
+    <h2>📋 Update Log</h2>
+    <textarea id="log-notes-area" placeholder="Track updates, decisions, and action items here…
+Example:
+• 6/18 — Updated deal detail CSV, corrected consignment payable on stock C-214
+• 6/17 — Added 3 new units to inventory
+• 6/16 — Reconciled Westlake flooring balance"></textarea>
+    <div class="log-modal-footer">
+      <button class="btn-sm" onclick="closeLogModal()">Close</button>
+      <button class="btn btn-primary" onclick="saveLogNotes()" style="padding:6px 18px;font-size:13px">💾 Save</button>
+    </div>
+  </div>
 </div>
 
 <!-- ══════════ PAGES ══════════ -->
@@ -56,6 +87,10 @@
   <div id="meetings-body"><div class="loading"><div class="spinner"></div>Click to load…</div></div>
 </div>
 
+<div id="page-inventory" class="page">
+  <div id="inventory-body"><div class="loading"><div class="spinner"></div>Click to load…</div></div>
+</div>
+
 <!-- ══════════ SCRIPTS ══════════
      Load order matters — each file depends on the ones above it.
      config    : constants (Drive IDs, OAuth client ID, LOCAL_FILES paths)
@@ -77,7 +112,89 @@
 <script src="src/js/pages/cashflow.js"></script>
 <script src="src/js/pages/repair.js"></script>
 <script src="src/js/pages/meetings.js"></script>
+<script src="src/js/pages/inventory.js"></script>
 <script src="src/js/dashboard.js"></script>
+
+<!-- ══════════ HERO CANVAS ANIMATION ══════════ -->
+<script>
+window.addEventListener('load', function () {
+
+  /* ── RAIN ── */
+  (function () {
+    const cv = document.getElementById('rain');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    let W, H;
+    function resize() { W = cv.width = cv.offsetWidth; H = cv.height = cv.offsetHeight; }
+    window.addEventListener('resize', resize); resize();
+    const drops = [];
+    for (let i = 0; i < 220; i++) {
+      drops.push({ x: Math.random() * 100, y: Math.random() * 100, len: 4 + Math.random() * 12,
+        speed: 15 + Math.random() * 22, alpha: .04 + Math.random() * .16, w: .25 + Math.random() * .35 });
+    }
+    (function draw() {
+      ctx.clearRect(0, 0, W, H);
+      drops.forEach(d => {
+        const px = (d.x / 100) * W, py = (d.y / 100) * H;
+        if (py > H * .82) { d.y = Math.random() * 10; return; }
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - .7, py + d.len);
+        ctx.strokeStyle = `rgba(220,232,255,${d.alpha})`; ctx.lineWidth = d.w; ctx.stroke();
+        d.y += d.speed / H * 100 * .26;
+        if (d.y > 82) d.y = Math.random() * 8;
+      });
+      requestAnimationFrame(draw);
+    })();
+  })();
+
+  /* ── SMOKE ── */
+  (function () {
+    const cv = document.getElementById('smoke');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const hero = document.getElementById('hero');
+    let W, H, mouseX = null, mouseY = null, mouseOver = false;
+    function resize() { W = cv.width = cv.offsetWidth; H = cv.height = cv.offsetHeight; }
+    window.addEventListener('resize', resize); resize();
+    hero.addEventListener('mousemove', e => {
+      const r = cv.getBoundingClientRect();
+      mouseX = e.clientX - r.left; mouseY = e.clientY - r.top; mouseOver = true;
+    });
+    hero.addEventListener('mouseleave', () => { mouseOver = false; });
+    const pts = [];
+    function mk(stag, fromMouse) {
+      const spawnX = (mouseOver && fromMouse) ? mouseX + (Math.random() - .5) * 60 : W * (.08 + Math.random() * .84);
+      const spawnY = (mouseOver && fromMouse) ? mouseY + (Math.random() - .5) * 30 : H * (.65 + Math.random() * .18);
+      return { x: spawnX, y: spawnY, vx: (Math.random() - .5) * .65, vy: -(0.3 + Math.random() * .7),
+        size: 80 + Math.random() * 180, alpha: 0, maxAlpha: .018 + Math.random() * .022,
+        life: stag ? Math.random() * 380 : 0, maxLife: 160 + Math.random() * 240,
+        spin: (Math.random() - .5) * .004, wb: Math.random() * Math.PI * 2, wbSpd: .007 + Math.random() * .014 };
+    }
+    for (let i = 0; i < 90; i++) pts.push(mk(true, false));
+    let fc = 0;
+    (function draw() {
+      ctx.clearRect(0, 0, W, H); fc++;
+      if (mouseOver && fc % 3 === 0) { pts.push(mk(false, true)); if (pts.length > 130) pts.splice(0, 1); }
+      pts.forEach((p, i) => {
+        p.life++;
+        if (p.life > p.maxLife) { pts.splice(i, 1, mk(false, false)); return; }
+        const t = p.life / p.maxLife;
+        p.alpha = t < .16 ? p.maxAlpha * (t / .16) : t > .7 ? p.maxAlpha * ((1 - t) / .3) : p.maxAlpha;
+        p.wb += p.wbSpd; p.x += p.vx + Math.sin(p.wb) * .24; p.y += p.vy; p.size += .5;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.spin * p.life);
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size);
+        g.addColorStop(0,   `rgba(255,255,255,${p.alpha * .65})`);
+        g.addColorStop(.38, `rgba(248,250,255,${p.alpha * .35})`);
+        g.addColorStop(.72, `rgba(238,242,255,${p.alpha * .12})`);
+        g.addColorStop(1,    'rgba(225,232,255,0)');
+        ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = g; ctx.fill(); ctx.restore();
+      });
+      requestAnimationFrame(draw);
+    })();
+  })();
+
+});
+</script>
 
 </body>
 </html>

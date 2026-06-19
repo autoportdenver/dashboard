@@ -5,9 +5,8 @@
 //  Unified data loading layer.
 //
 //  Priority per source:
-//    1. Drive via Cowork MCP  (window.cowork — inside Cowork desktop app)
-//    2. Drive via OAuth       (direct Drive v3 REST — any browser with token)
-//    3. Local files           (src/uploads/ — offline / no auth)
+//    1. Drive via OAuth  (direct Drive v3 REST — any browser with token)
+//    2. Local files      (src/uploads/ — offline / no auth)
 //
 //  All results are cached in `cache` to avoid redundant fetches.
 // ══════════════════════════════════════════════
@@ -36,7 +35,7 @@ async function loadCSV(localKey, folderId) {
         const txt = await driveRead(file.id);
         if (txt && txt.length > 50) return parseCSV(txt);
       }
-    } catch (e) { /* fall through */ }
+    } catch (e) {}
   }
   // 2. Local files
   const localPath = LOCAL_FILES[localKey];
@@ -120,7 +119,23 @@ async function getDealPaymentRows() {
 
 async function getLeadsRows() {
   if (cache.leadsRows) return cache.leadsRows;
-  const rows = await loadCSV('leads', FOLDER_IDS.leads);
+  let rows = await loadCSV('leads', FOLDER_IDS.leads);
+  // Leads may be organized in platform subfolders (Cars.Com, Autotrader, etc.)
+  // If nothing found at the top level, search one level into every subfolder and combine
+  if (!rows.length && isDriveAvailable()) {
+    try {
+      const subRes = await driveApiFetch('/files', {
+        q: `'${FOLDER_IDS.leads}' in parents and trashed=false and mimeType = 'application/vnd.google-apps.folder'`,
+        fields: 'files(id,name)', pageSize: '20',
+        supportsAllDrives: 'true', includeItemsFromAllDrives: 'true', corpora: 'allDrives',
+      });
+      const subFolders = (await subRes.json()).files || [];
+      if (subFolders.length) {
+        const subRowArrays = await Promise.all(subFolders.map(sf => loadCSV('leads', sf.id)));
+        rows = subRowArrays.flat();
+      }
+    } catch (e) { /* ignore */ }
+  }
   cache.leadsRows = rows;
   return rows;
 }
