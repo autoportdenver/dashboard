@@ -88,11 +88,12 @@ function renderMetrics(el, dealRows, leadsRows, itemRows, salesLogData, errHtml)
     const soldRows     = getPeriodRows(dealRows.filter(r => r._isSold));
     const prevSoldRows = getPrevPeriodRows(dealRows.filter(r => r._isSold));
 
-    // ── Gross Profit breakdown (Front = Sale Price - Cost; Back = F&I)
+    // ── Gross Profit breakdown (Front = col T − col S; Back = F&I)
+    // Use column-letter access — resilient to header variations in Google Sheets CSV exports
     let totalFront = 0, totalBack = 0;
     soldRows.forEach(r => {
-      const sp    = parseMoney(getField(r._raw,'pricing sale price','sale price'));
-      const cost  = parseMoney(getField(r._raw,'inventory total cost','total cost'));
+      const sp    = parseMoney(col(r._raw, 'T')); // Pricing Sale Price
+      const cost  = parseMoney(col(r._raw, 'S')); // Inventory Total Cost
       const back  = parseMoney(getField(r._raw,'pricing backend profit','backend profit'));
       const front = (!isNaN(sp) && !isNaN(cost)) ? sp - cost : NaN;
       if (!isNaN(front)) totalFront += front;
@@ -104,8 +105,8 @@ function renderMetrics(el, dealRows, leadsRows, itemRows, salesLogData, errHtml)
     // ── Same-period previous totals for delta
     let prevFront = 0, prevBack = 0;
     prevSoldRows.forEach(r => {
-      const sp   = parseMoney(getField(r._raw,'pricing sale price','sale price'));
-      const cost = parseMoney(getField(r._raw,'inventory total cost','total cost'));
+      const sp   = parseMoney(col(r._raw, 'T')); // Pricing Sale Price
+      const cost = parseMoney(col(r._raw, 'S')); // Inventory Total Cost
       const back = parseMoney(getField(r._raw,'pricing backend profit','backend profit'));
       if (!isNaN(sp) && !isNaN(cost)) prevFront += (sp - cost);
       if (!isNaN(back)) prevBack += back;

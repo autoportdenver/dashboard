@@ -168,11 +168,11 @@ function setupMeetingNoteHandlers(dealRows, itemRows, salesLogData) {
       const ds = daysBetween(dt, satDate);
       return ds >= 0 && ds < 7;
     });
-    // Gross profit breakdown
+    // Gross profit breakdown — use col-letter access for price/cost (resilient to header variations)
     let wFront = 0, wBack = 0;
     weekRowsAll.forEach(r => {
-      const sp   = parseMoney(getField(r._raw,'pricing sale price','sale price'));
-      const cost = parseMoney(getField(r._raw,'inventory total cost','total cost'));
+      const sp   = parseMoney(col(r._raw, 'T')); // Pricing Sale Price
+      const cost = parseMoney(col(r._raw, 'S')); // Inventory Total Cost
       const back = parseMoney(getField(r._raw,'pricing backend profit','backend profit'));
       if (!isNaN(sp) && !isNaN(cost)) wFront += (sp - cost);
       if (!isNaN(back)) wBack += back;
@@ -253,8 +253,8 @@ function setupMeetingNoteHandlers(dealRows, itemRows, salesLogData) {
             <thead><tr><th>Vehicle</th><th>Stock #</th><th>Front GP</th><th>Back GP</th><th>Total GP</th><th>Closed</th></tr></thead>
             <tbody>
               ${weekRowsAll.map(r=>{
-                const sp   = parseMoney(getField(r._raw,'pricing sale price','sale price'));
-                const cost = parseMoney(getField(r._raw,'inventory total cost','total cost'));
+                const sp   = parseMoney(col(r._raw, 'T')); // Pricing Sale Price
+                const cost = parseMoney(col(r._raw, 'S')); // Inventory Total Cost
                 const back = parseMoney(getField(r._raw,'pricing backend profit','backend profit'));
                 const front = (!isNaN(sp)&&!isNaN(cost)) ? sp-cost : NaN;
                 const tot   = (!isNaN(front)?front:0) + (!isNaN(back)?back:0);

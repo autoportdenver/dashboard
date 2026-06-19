@@ -71,18 +71,69 @@ function showPage(name) {
   }
 }
 
-// ── Update Log Modal ──
-let _logNotes = '';
-function openLogModal() {
-  document.getElementById('log-notes-area').value = _logNotes;
-  document.getElementById('log-modal').classList.add('open');
+// ── Update Log (live data-freshness dropdown) ──
+let _updPanelLoaded = false;
+function toggleUpdPanel() {
+  const panel = document.getElementById('upd-panel');
+  if (!panel) return;
+  const isOpen = panel.classList.toggle('open');
+  if (isOpen && !_updPanelLoaded) {
+    _updPanelLoaded = true;
+    loadUpdPanel();
+  }
 }
-function closeLogModal() {
-  document.getElementById('log-modal').classList.remove('open');
-}
-function saveLogNotes() {
-  _logNotes = document.getElementById('log-notes-area').value;
-  closeLogModal();
+document.addEventListener('click', e => {
+  const panel = document.getElementById('upd-panel');
+  const btn   = document.getElementById('upd-btn');
+  if (panel && panel.classList.contains('open') && btn && !panel.contains(e.target) && !btn.contains(e.target)) {
+    panel.classList.remove('open');
+  }
+});
+async function loadUpdPanel() {
+  const rowsEl = document.getElementById('upd-rows'); if (!rowsEl) return;
+  const today  = new Date();
+  function ageLabel(modStr) {
+    if (!modStr) return ['—', 'warn'];
+    const d = new Date(modStr);
+    const days = Math.floor((today - d) / 86400000);
+    const label = days === 0 ? 'Today' : days === 1 ? '1 day ago' : days + 'd ago';
+    const cls   = days <= 3 ? 'ok' : days <= 10 ? 'warn' : 'old';
+    return [label, cls];
+  }
+  function fmtDate(s) {
+    if (!s) return '—';
+    return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+  }
+  const sources = [
+    { name: 'Inventory Report',   folderId: FOLDER_IDS.inventory },
+    { name: 'Deal Detail',        folderId: FOLDER_IDS.dealDetail },
+    { name: 'Itemized Costs',     folderId: FOLDER_IDS.itemizedCosts },
+    { name: 'Deal Payments',      folderId: FOLDER_IDS.dealPayments },
+    { name: 'Title Report',       searchName: 'Sold Inventory - Title Report' },
+    { name: 'DTS Reports',        folderId: FOLDER_IDS.dtsReports },
+    { name: 'Sales Log',          fileId: FILE_IDS.salesLog },
+    { name: 'Accounting Package', fileId: FILE_IDS.accounting },
+  ];
+  const results = await Promise.allSettled(sources.map(async src => {
+    if (src.fileId) {
+      return { name: src.name, modTime: null, note: 'File ID known' };
+    } else if (src.searchName) {
+      const f = await driveSearchByName(src.searchName);
+      return { name: src.name, modTime: f ? f.modifiedTime : null };
+    } else {
+      const f = await driveSearchLatest(src.folderId);
+      return { name: src.name, modTime: f ? f.modifiedTime : null, fileName: f ? (f.name || f.title) : null };
+    }
+  }));
+  rowsEl.innerHTML = results.map(r => {
+    const d = r.status === 'fulfilled' ? r.value : { name: '?', modTime: null };
+    const [ageStr, ageCls] = ageLabel(d.modTime);
+    return '<div class="upd-row">' +
+      '<span class="upd-src">' + d.name + (d.fileName ? '<br><span style="font-size:9px;color:rgba(140,170,220,.38)">' + d.fileName + '</span>' : '') + '</span>' +
+      '<span class="upd-date">' + fmtDate(d.modTime) + '</span>' +
+      '<span class="upd-age ' + ageCls + '">' + ageStr + '</span>' +
+      '</div>';
+  }).join('');
 }
 
 // ── Global UI helpers ──

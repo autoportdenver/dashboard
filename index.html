@@ -36,23 +36,15 @@
     <button class="nav-btn" onclick="showPage('meetings')">📅 Meetings</button>
     <button class="nav-btn" onclick="showPage('inventory')">📦 Inventory</button>
   </nav>
-  <button class="hdr-log-btn" onclick="openLogModal()">📋 Update Log</button>
+  <div id="upd-btn" onclick="toggleUpdPanel()">
+    <div id="upd-dot"></div>
+    <span>Update Log</span>
+  </div>
   <div id="hdr-date"></div>
-</div>
-
-<!-- ══════════ UPDATE LOG MODAL ══════════ -->
-<div id="log-modal" onclick="if(event.target===this)closeLogModal()">
-  <div id="log-modal-box">
-    <h2>📋 Update Log</h2>
-    <textarea id="log-notes-area" placeholder="Track updates, decisions, and action items here…
-Example:
-• 6/18 — Updated deal detail CSV, corrected consignment payable on stock C-214
-• 6/17 — Added 3 new units to inventory
-• 6/16 — Reconciled Westlake flooring balance"></textarea>
-    <div class="log-modal-footer">
-      <button class="btn-sm" onclick="closeLogModal()">Close</button>
-      <button class="btn btn-primary" onclick="saveLogNotes()" style="padding:6px 18px;font-size:13px">💾 Save</button>
-    </div>
+  <!-- Update Log dropdown panel -->
+  <div id="upd-panel">
+    <div class="upd-panel-hdr">Data Sources &amp; Last Update</div>
+    <div id="upd-rows"><div class="upd-row"><span class="upd-src" style="color:rgba(140,170,220,.45)">Loading…</span></div></div>
   </div>
 </div>
 
