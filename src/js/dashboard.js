@@ -162,6 +162,15 @@ function onDriveReady() {
   // Hide auth gate and load home if not already loaded
   const gate = document.getElementById('auth-gate');
   if (gate) gate.style.display = 'none';
+
+  // Pre-warm XLSX caches immediately — fire-and-forget (no await).
+  // Both files take 1-3 s to fetch + SheetJS-parse; starting them here means
+  // that by the time the user navigates to Operating or Meetings the cache is
+  // already hot and those pages appear instantly.  loadHome() awaits
+  // getSalesLogData() below so the home KPIs are also backed by Sales Log data.
+  getSalesLogData();
+  getAccountingText();
+
   if (!loaded.home) {
     loaded.home = true;
     loadHome().catch(err => {

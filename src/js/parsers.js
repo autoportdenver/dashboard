@@ -199,14 +199,32 @@ function parseSalesLog(txt) {
       const type = (row['type'] || '').trim();
       const isVehicleSale = /vehicle\s*sale/i.test(type);
       const isWarranty    = /warranty/i.test(type);
-      if (!isVehicleSale && !isWarranty) continue;
+      if (!isVehicleSale && !isWarranty) {
+        // Diagnostic: log non-empty unrecognised types so column format mismatches are visible.
+        if (type) console.log('[AutoPort Parsers] ' + spName + ' row skipped — unrecognised type:', JSON.stringify(type), '| date:', dateRaw);
+        continue;
+      }
 
       const stock   = (row['stock'] || '').trim();
       const vehicle = (row['inventory vehicle name'] || row['vehicle name'] || row['vehicle'] || '').trim();
       const notes   = (row['notes'] || row['deal notes'] || row['sp notes'] || '').trim();
 
-      const adjFront = cleanMoney(row['adjusted f-profit'] ?? row['adj f-profit'] ?? row['adjusted front profit'] ?? row['adj front profit'] ?? row['adjf-profit'] ?? row['adjusted f profit'] ?? '');
-      const bProfit  = cleanMoney(row['b-profit'] ?? row['b profit'] ?? row['backend profit'] ?? row['back profit'] ?? row['b-gross'] ?? '');
+      // Front gross: try every known column alias across all SP sheet formats.
+      // Kris's sheet uses "F - Profit"; Joseph/Felix use "Adjusted F-Profit".
+      const adjFront = cleanMoney(
+        row['adjusted f-profit']    ?? row['adj f-profit']       ??
+        row['adjusted front profit']?? row['adj front profit']   ??
+        row['adjf-profit']          ?? row['adjusted f profit']  ??
+        row['f - profit']           ?? row['f-profit']           ??
+        row['front profit']         ?? row['f profit']           ?? ''
+      );
+      // Back gross: try every known column alias across all SP sheet formats.
+      const bProfit = cleanMoney(
+        row['b-profit']       ?? row['b profit']      ??
+        row['backend profit'] ?? row['back profit']   ??
+        row['b-gross']        ?? row['b gross']       ??
+        row['back gross']     ?? row['backend gross'] ?? ''
+      );
       const splitRaw = (row['split'] ?? row['split%'] ?? row['split %'] ?? row['split pct'] ?? '100').replace('%', '').trim();
       const splitPct = Math.min(1, Math.max(0, (parseFloat(splitRaw) || 100) / 100));
       const totalChk = cleanMoney(row['total check'] ?? row['total'] ?? row['check amount'] ?? row['sp check'] ?? '');
@@ -262,17 +280,79 @@ function parseSalesLog(txt) {
     }).filter(Boolean).sort((a, b) => a.d - b.d);
   }
 
+  // ── Sheet extractor ──
+  // driveReadXLSX() emits "### SheetName\n<csv>" blocks joined by "\n".
+  // This extracts one sheet cleanly by its exact name, independent of the header row format.
+  // Returns the sheet's CSV text (first line = header, rest = data).  Empty string if not found.
+  function extractSheet(name) {
+    const marker = '### ' + name + '\n';
+    const start  = txt.indexOf(marker);
+    if (start < 0) return '';
+    const cs = start + marker.length;
+    const ns = txt.indexOf('\n### ', cs);
+    return ns >= 0 ? txt.slice(cs, ns) : txt.slice(cs);
+  }
+
   const josephRows = parseNewFormat(josephText, 'joseph');
   const felixRows  = parseNewFormat(felixText,  'felix');
-  const krisRows   = krisNewText
-    ? parseNewFormat(krisNewText, 'kris')
-    : parseOldFormat(krisOldText, 'kris');
+
+  // ── Kris cascade ──
+  // Primary: extract Kris-Cars directly by sheet boundary (bypasses NEW_HDR string matching
+  // so slight header differences don't break detection).
+  // Fallbacks: index-based krisNewText → old format → plain "Kris" sheet.
+  const krisCarsSectionText = extractSheet('Kris-Cars') || extractSheet('Kris Cars') || '';
+
+  // The sheet may have preamble/title rows before the real column header.
+  // Find the first line whose first CSV column is "date" (case-insensitive) — that's the data header.
+  // This lets us skip any number of decorative rows without relying on an exact header string.
+  function skipToDataHeader(sectionText) {
+    if (!sectionText) return '';
+    const lines = sectionText.split('\n');
+    for (let i = 0; i < Math.min(lines.length, 15); i++) {
+      const firstCol = lines[i].split(',')[0].replace(/^"/, '').trim().toLowerCase();
+      if (firstCol === 'date') return lines.slice(i).join('\n');
+    }
+    return sectionText;  // no header found — return as-is and let parseNewFormat fail gracefully
+  }
+
+  const krisDataText = skipToDataHeader(krisCarsSectionText);
+
+  // Diagnostic: log the header line we'll actually use (first line of krisDataText).
+  if (krisCarsSectionText) {
+    console.log('[AutoPort Parsers] Kris-Cars data header:', krisDataText.split('\n')[0]);
+  } else {
+    console.log('[AutoPort Parsers] Kris-Cars NOT found via extractSheet — krisLabelIdx:', krisLabelIdx, 'krisNewHdrIdx:', krisNewHdrIdx);
+  }
+
+  let krisRows = krisDataText ? parseNewFormat(krisDataText, 'kris') : [];
+
+  // If direct extraction returned 0, try the index-based krisNewText path (old behaviour).
+  if (!krisRows.length && krisNewText) {
+    krisRows = parseNewFormat(krisNewText, 'kris');
+  }
+  // Old-format fallback ("Kris Date,Car" column layout).
+  if (!krisRows.length && krisOldHdrIdx >= 0) {
+    krisRows = parseOldFormat(krisOldText, 'kris');
+  }
+  // Plain "Kris" sheet (first tab in older workbooks).
+  if (!krisRows.length) {
+    const ksText = extractSheet('Kris');
+    if (ksText) {
+      krisRows = parseNewFormat(ksText, 'kris');
+      if (!krisRows.length) krisRows = parseOldFormat(ksText, 'kris');
+    }
+  }
+
+  // If still 0 after all paths, log the first few data rows so the caller can see why they were rejected.
+  if (!krisRows.length && krisDataText) {
+    console.log('[AutoPort Parsers] Kris-Cars returned 0 deals. Data preview:\n' + krisDataText.substring(0, 500));
+  }
 
   return {
     joseph: josephRows,
     felix:  felixRows,
     kris:   krisRows,
-    _debug: `${txt.length} chars | J:${josephRows.length} F:${felixRows.length} K:${krisRows.length} deals | hdr@J:${josephHdrIdx} F:${felixHdrIdx} K-new:${krisNewHdrIdx} K-old:${krisOldHdrIdx}`,
+    _debug: `${txt.length} chars | J:${josephRows.length} F:${felixRows.length} K:${krisRows.length} deals | hdr@J:${josephHdrIdx} F:${felixHdrIdx} K-new:${krisNewHdrIdx} K-old:${krisOldHdrIdx} K-section:${krisCarsSectionText.length}`,
   };
 }
 

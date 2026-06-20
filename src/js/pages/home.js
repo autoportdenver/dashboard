@@ -7,40 +7,55 @@
 async function loadHome() {
   const el = document.getElementById('home-body');
   el.innerHTML = loading('Loading inventory & sales data…');
-  const [invR, dealR, itemR, payR, titR, dtsR] = await Promise.allSettled([
+  const [invR, dealR, itemR, payR, titR, dtsR, slR] = await Promise.allSettled([
     getInventoryRows(), getDealDetailRows(), getItemizedCostRows(), getDealPaymentRows(),
-    getTitlesRows(), getDTSRows()
+    getTitlesRows(), getDTSRows(), getSalesLogData()
   ]);
-  const invRows  = invR.status  === 'fulfilled' ? invR.value  : null;
-  const dealRows = dealR.status === 'fulfilled' ? dealR.value : null;
-  const itemRows = itemR.status === 'fulfilled' ? itemR.value : null;
-  const payRows  = payR.status  === 'fulfilled' ? payR.value  : [];
-  const titlesRows = titR.status === 'fulfilled' ? titR.value : [];
-  const dtsRows    = dtsR.status === 'fulfilled' ? dtsR.value : [];
+  const invRows      = invR.status  === 'fulfilled' ? invR.value  : null;
+  const dealRows     = dealR.status === 'fulfilled' ? dealR.value : null;
+  const itemRows     = itemR.status === 'fulfilled' ? itemR.value : null;
+  const payRows      = payR.status  === 'fulfilled' ? payR.value  : [];
+  const titlesRows   = titR.status  === 'fulfilled' ? titR.value  : [];
+  const dtsRows      = dtsR.status  === 'fulfilled' ? dtsR.value  : [];
+  const salesLogData = slR.status   === 'fulfilled' ? slR.value   : { joseph: [], felix: [], kris: [] };
   const errs = [
     invR.status  === 'rejected' ? '⚠ Inventory: '  + (invR.reason?.message  || invR.reason)  : null,
     dealR.status === 'rejected' ? '⚠ Deal Detail: ' + (dealR.reason?.message || dealR.reason) : null,
     itemR.status === 'rejected' ? '⚠ Item Costs: '  + (itemR.reason?.message || itemR.reason) : null,
   ].filter(Boolean);
   const errHtml = errs.length ? '<div class="error-box" style="margin-bottom:12px">' + errs.join('<br>') + '</div>' : '';
-  renderHome(el, invRows || [], dealRows || [], itemRows || [], payRows || [], errHtml, titlesRows, dtsRows);
+  renderHome(el, invRows || [], dealRows || [], itemRows || [], payRows || [], errHtml, titlesRows, dtsRows, salesLogData);
 }
 
-function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRows, dtsRows) {
+function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRows, dtsRows, salesLogData) {
   errHtml    = errHtml    || '';
   payRows    = payRows    || [];
   titlesRows = titlesRows || [];
   dtsRows    = dtsRows    || [];
+  salesLogData = salesLogData || {};
 
   const now   = new Date();
   const thisY = now.getFullYear(), thisM = now.getMonth();
   const lastM = thisM === 0 ? 11 : thisM - 1;
   const lastY = thisM === 0 ? thisY - 1 : thisY;
 
+  // ── Sales Log monthly tallies — source of truth for unit counts + gross profit ──
+  // calcSPFromSalesLog sums frontGross + backGross + warrantyBProfit per deal,
+  // which matches the figures the SPs track (and what the Metrics page shows).
+  const thisMFn = d => d && isSameMonth(d, thisY, thisM);
+  const lastMFn = d => d && isSameMonth(d, lastY, lastM) && d.getDate() <= now.getDate();
+  const slTallyThis = calcSPFromSalesLog(salesLogData, thisMFn);
+  const slTallyLast = calcSPFromSalesLog(salesLogData, lastMFn);
+  const slUnitsThis = Object.values(slTallyThis).reduce((s, v) => s + v.units, 0);
+  const slGrossThis = Object.values(slTallyThis).reduce((s, v) => s + v.gross, 0);
+  const slUnitsLast = Object.values(slTallyLast).reduce((s, v) => s + v.units, 0);
+  const slGrossLast = Object.values(slTallyLast).reduce((s, v) => s + v.gross, 0);
+  // Round units to 1 decimal for display (split deals produce e.g. 0.5)
+  const fmtUnits = u => Number.isInteger(u) || u % 1 === 0 ? String(Math.round(u)) : u.toFixed(1);
+
+  // Keep Deal Detail arrays for top-brand, YTD chart, todo flags, and titles logic
   const soldThis = dealRows.filter(r => r._isSold && isSameMonth(r._date, thisY, thisM));
   const soldLast = dealRows.filter(r => r._isSold && isSameMonth(r._date, lastY, lastM) && r._date.getDate() <= now.getDate());
-  const grossThis = soldThis.reduce((s,r) => s + (r._profit||0), 0);
-  const grossLast = soldLast.reduce((s,r) => s + (r._profit||0), 0);
 
   // PURCHASED THIS MONTH — inventory in-date (col F), more reliable than auction detection
   const invPurchasedThis = invRows.filter(r => {
@@ -356,14 +371,22 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRow
     return html;
   })();
 
-  // ── YTD monthly data ──
+  // ── YTD monthly data — from Sales Log (source of truth for front + back gross) ──
+  // Deal Detail col(T)-col(S) only captures front gross and can lag behind real sales.
+  // The Sales Log includes frontGross + backGross + warrantyBProfit and is kept current by SPs.
   const ytdGross = Array(12).fill(0);
   const ytdUnits = Array(12).fill(0);
-  dealRows.forEach(r => {
-    if (!r._isSold || !r._date || r._date.getFullYear() !== thisY) return;
-    ytdGross[r._date.getMonth()] += r._profit || 0;
-    ytdUnits[r._date.getMonth()]++;
-  });
+  for (const spKey of ['joseph', 'felix', 'kris']) {
+    for (const row of (salesLogData[spKey] || [])) {
+      const d = row.d || parseDate(row.dateRaw);
+      if (!d || isNaN(d.getTime()) || d.getFullYear() !== thisY) continue;
+      if (row.unitType === 'warranty-only') continue;
+      const pct = typeof row.splitPct === 'number' ? row.splitPct : 1;
+      const m   = d.getMonth();
+      ytdGross[m] += ((row.frontGross || 0) + (row.backGross || 0) + (row.warrantyBProfit || 0)) * pct;
+      ytdUnits[m] += pct;
+    }
+  }
   const ytdMax    = Math.max(...ytdGross.map(Math.abs), 1);
   const ytdTotal  = ytdGross.reduce((s, v) => s + v, 0);
   const ytdBars   = monthNames.slice(0, thisM + 1).map((mn, mi) => {
@@ -383,7 +406,7 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRow
       <div style="font-size:9px;color:${isCur?'var(--text)':'var(--muted)'};font-weight:${isCur?'700':'400'}">${mn}</div>
     </div>`;
   }).join('');
-  const ytdAvgGross  = soldThis.length ? Math.round(grossThis / soldThis.length) : 0;
+  const ytdAvgGross  = slUnitsThis > 0 ? Math.round(slGrossThis / slUnitsThis) : 0;
   const ytdUnitTotal = ytdUnits.reduce((s,v) => s + v, 0);
 
   // ── Build HTML ──
@@ -393,13 +416,13 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRow
   <div class="kpi-strip" style="margin-bottom:18px">
     <div class="kpi-cell">
       <div class="kpi-label">Units Sold · ${monthNames[thisM]}</div>
-      <div class="kpi-val">${soldThis.length}</div>
-      <div class="kpi-sub">${soldThis.length > soldLast.length ? '↑' : soldThis.length < soldLast.length ? '↓' : '→'} ${soldLast.length} last month</div>
+      <div class="kpi-val">${fmtUnits(slUnitsThis)}</div>
+      <div class="kpi-sub">${slUnitsThis > slUnitsLast ? '↑' : slUnitsThis < slUnitsLast ? '↓' : '→'} ${fmtUnits(slUnitsLast)} last month</div>
     </div>
     <div class="kpi-cell kpi-cell-accent">
       <div class="kpi-label">Gross Profit · ${monthNames[thisM]}</div>
-      <div class="kpi-val" style="color:${grossThis>=0?'var(--text)':'var(--red)'}">${fmt$(grossThis)}</div>
-      <div class="kpi-sub">Last mo ${fmt$(grossLast)} · avg ${ytdAvgGross?fmt$(ytdAvgGross):' —'}/unit</div>
+      <div class="kpi-val" style="color:${slGrossThis>=0?'var(--text)':'var(--red)'}">${fmt$(slGrossThis)}</div>
+      <div class="kpi-sub">Last mo ${fmt$(slGrossLast)} · avg ${ytdAvgGross?fmt$(ytdAvgGross):' —'}/unit</div>
     </div>
     <div class="kpi-cell">
       <div class="kpi-label">Active Inventory</div>
@@ -523,16 +546,16 @@ function renderHome(el, invRows, dealRows, itemRows, payRows, errHtml, titlesRow
   <div class="kpi-strip" style="margin-bottom:20px">
     <div class="kpi-cell">
       <div class="kpi-label">Units Sold</div>
-      <div class="kpi-val">${soldLast.length}</div>
+      <div class="kpi-val">${fmtUnits(slUnitsLast)}</div>
     </div>
     <div class="kpi-cell">
       <div class="kpi-label">Total Gross</div>
-      <div class="kpi-val" style="font-size:22px">${fmt$(grossLast)}</div>
+      <div class="kpi-val" style="font-size:22px">${fmt$(slGrossLast)}</div>
       <div class="kpi-sub">Front + Back</div>
     </div>
     <div class="kpi-cell">
       <div class="kpi-label">Avg Gross / Unit</div>
-      <div class="kpi-val" style="font-size:22px">${soldLast.length ? fmt$(Math.round(grossLast/soldLast.length)) : '—'}</div>
+      <div class="kpi-val" style="font-size:22px">${slUnitsLast > 0 ? fmt$(Math.round(slGrossLast / slUnitsLast)) : '—'}</div>
     </div>
     <div class="kpi-cell">
       <div class="kpi-label">Purchased</div>

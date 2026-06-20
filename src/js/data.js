@@ -2,126 +2,153 @@
 
 // ══════════════════════════════════════════════
 //  DATA — src/js/data.js
-//  Unified data loading layer.
+//  Unified data loading layer — Google Drive only.
 //
-//  Priority per source:
-//    1. Drive via OAuth  (direct Drive v3 REST — any browser with token)
-//    2. Local files      (src/uploads/ — offline / no auth)
+//  Every named loader writes a one-line console entry:
+//    ✅  success  — file name, row/char count, modified date
+//    ⚠️  warning  — no file found, or file was empty
+//    ❌  error    — Drive API error or parse failure
 //
-//  All results are cached in `cache` to avoid redundant fetches.
+//  All results are cached so each source is fetched once per session.
 // ══════════════════════════════════════════════
 
-const cache = {};  // raw data cache shared across pages
+const cache = {};
 
-// ── Low-level local fetch ──
-async function fetchLocal(path) {
-  if (!path) return null;
+// ── Console diagnostics ──
+const _T = '[AutoPort Data]';
+function _ok(label, detail)  { console.log('%c' + _T + ' ✅ ' + label, 'color:#22c55e;font-weight:600', detail || ''); }
+function _warn(label, detail){ console.warn(_T + ' ⚠️  ' + label, detail || ''); }
+function _err(label, detail) { console.error(_T + ' ❌ ' + label, detail || ''); }
+
+// Format a modifiedTime ISO string as a short readable date.
+function _modStr(t) {
+  if (!t) return '';
+  const d = new Date(t);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+}
+
+// ── Generic Drive loaders (used by named loaders below) ──
+
+// Find the most-recently-modified file in folderId, read it, return parsed CSV rows.
+// Pass a human-readable `label` to get console output; omit for silent operation.
+async function loadCSV(folderId, label) {
+  if (!folderId || !isDriveAvailable()) {
+    if (label) _warn(label, 'Drive not available (not signed in)');
+    return [];
+  }
+  let file = null;
   try {
-    const res = await fetch(path);
-    if (!res.ok) return null;
-    return await res.text();
+    file = await driveSearchLatest(folderId);
+    if (!file) {
+      if (label) _warn(label, 'no file found in Drive folder ' + folderId);
+      return [];
+    }
+    const txt = await driveRead(file.id);
+    if (!txt || txt.length <= 50) {
+      if (label) _warn(label, '"' + file.name + '" — file found but content is empty');
+      return [];
+    }
+    const rows = parseCSV(txt);
+    if (label) _ok(label, '"' + file.name + '" — ' + rows.length + ' rows | mod ' + _modStr(file.modifiedTime));
+    return rows;
   } catch (e) {
-    return null;  // file not found or server not running
+    if (label) _err(label, (file ? '"' + file.name + '" — ' : '') + e.message);
+    return [];
   }
 }
 
-// ── Generic: Drive first (Cowork → OAuth), local files as final fallback ──
-async function loadCSV(localKey, folderId) {
-  // 1. Drive
-  if (folderId && isDriveAvailable()) {
+// Read a known file by ID and return raw text.
+async function loadText(fileId, label) {
+  if (!fileId || !isDriveAvailable()) {
+    if (label) _warn(label, 'Drive not available (not signed in)');
+    return '';
+  }
+  try {
+    const txt = await driveRead(fileId);
+    if (!txt || txt.length <= 50) {
+      if (label) _warn(label, 'file ' + fileId + ' — content is empty');
+      return '';
+    }
+    if (label) _ok(label, fileId + ' — ' + txt.length.toLocaleString() + ' chars');
+    return txt;
+  } catch (e) {
+    if (label) _err(label, e.message);
+    return '';
+  }
+}
+
+// Search Drive by name fragment(s), return parsed CSV rows from the first match.
+async function loadCSVByName(label, ...nameFragments) {
+  if (!isDriveAvailable()) {
+    if (label) _warn(label, 'Drive not available (not signed in)');
+    return [];
+  }
+  for (const frag of nameFragments) {
+    let f = null;
     try {
-      const file = await driveSearchLatest(folderId);
-      if (file?.id) {
-        const txt = await driveRead(file.id);
-        if (txt && txt.length > 50) return parseCSV(txt);
-      }
-    } catch (e) {}
-  }
-  // 2. Local files
-  const localPath = LOCAL_FILES[localKey];
-  if (localPath) {
-    const txt = await fetchLocal(localPath);
-    if (txt && txt.length > 50) return parseCSV(txt);
-  }
-  return [];
-}
-
-// ── Generic: Drive first (by file ID), local files as final fallback ──
-async function loadText(localKey, fileId) {
-  // 1. Drive
-  if (fileId && isDriveAvailable()) {
-    try { const txt = await driveRead(fileId); if (txt && txt.length > 50) return txt; } catch (e) {}
-  }
-  // 2. Local files
-  const localPath = LOCAL_FILES[localKey];
-  if (localPath) {
-    const txt = await fetchLocal(localPath);
-    if (txt && txt.length > 50) return txt;
-  }
-  return '';
-}
-
-// ── Generic: Drive first (by name search), local files as final fallback ──
-async function loadCSVByName(localKey, ...nameFragments) {
-  // 1. Drive
-  if (isDriveAvailable()) {
-    for (const frag of nameFragments) {
-      const f = await driveSearchByName(frag);
-      if (f?.id) {
-        try {
-          const txt = await driveRead(f.id);
-          if (txt && txt.length > 50) return parseCSV(txt);
-        } catch (e) {}
-      }
+      f = await driveSearchByName(frag);
+      if (!f) continue;
+      const txt = await driveRead(f.id);
+      if (!txt || txt.length <= 50) continue;
+      const rows = parseCSV(txt);
+      if (label) _ok(label, '"' + f.name + '" — ' + rows.length + ' rows | mod ' + _modStr(f.modifiedTime));
+      return rows;
+    } catch (e) {
+      if (label) _err(label, (f ? '"' + f.name + '" — ' : 'search "' + frag + '" — ') + e.message);
     }
   }
-  // 2. Local files
-  const localPath = LOCAL_FILES[localKey];
-  if (localPath) {
-    const txt = await fetchLocal(localPath);
-    if (txt && txt.length > 50) return parseCSV(txt);
-  }
+  if (label) _warn(label, 'not found — searched: ' + nameFragments.join(', '));
   return [];
 }
 
-// ── Named loaders (cached) ──
+// ══════════════════════════════════════════════
+//  NAMED LOADERS  (each cached after first call)
+// ══════════════════════════════════════════════
 
 async function getInventoryRows() {
   if (cache.inventoryRows) return cache.inventoryRows;
-  const rows = await loadCSV('inventory', FOLDER_IDS.inventory);
-  if (!rows.length) throw new Error('No inventory report found.');
+  const rows = await loadCSV(FOLDER_IDS.inventory, 'Inventory Report');
+  if (!rows.length) throw new Error('No Inventory Report found in Drive.');
   cache.inventoryRows = rows;
   return rows;
 }
 
 async function getDealDetailRows() {
   if (cache.dealRows) return cache.dealRows;
-  const rows = await loadCSV('dealDetail', FOLDER_IDS.dealDetail);
-  if (!rows.length) throw new Error('No Deal Detail CSV found.');
+  const rows = await loadCSV(FOLDER_IDS.dealDetail, 'Deal Detail');
+  if (!rows.length) throw new Error('No Deal Detail CSV found in Drive.');
   cache.dealRows = buildDealRows(rows);
   return cache.dealRows;
 }
 
 async function getItemizedCostRows() {
   if (cache.itemizedRows) return cache.itemizedRows;
-  const rows = await loadCSV('itemizedCosts', FOLDER_IDS.itemizedCosts);
-  if (!rows.length) throw new Error('No Itemized Inventory Costs CSV found.');
+  const rows = await loadCSV(FOLDER_IDS.itemizedCosts, 'Itemized Costs');
+  if (!rows.length) throw new Error('No Itemized Inventory Costs CSV found in Drive.');
   cache.itemizedRows = rows;
   return rows;
 }
 
 async function getDealPaymentRows() {
   if (cache.dealPayRows) return cache.dealPayRows;
-  const rows = await loadCSV('dealPayments', FOLDER_IDS.dealPayments);
+  const rows = await loadCSV(FOLDER_IDS.dealPayments, 'Deal Payments');
   cache.dealPayRows = rows;
+  return rows;
+}
+
+async function getLoanPaymentRows() {
+  if (cache.loanPayRows) return cache.loanPayRows;
+  const rows = await loadCSV(FOLDER_IDS.loanPayments, 'Loan Payments');
+  cache.loanPayRows = rows;
   return rows;
 }
 
 async function getLeadsRows() {
   if (cache.leadsRows) return cache.leadsRows;
-  let rows = await loadCSV('leads', FOLDER_IDS.leads);
-  // Leads may be organized in platform subfolders (Cars.Com, Autotrader, etc.)
-  // If nothing found at the top level, search one level into every subfolder and combine
+
+  // Try top-level leads folder first; if empty, recurse into platform sub-folders.
+  let rows = await loadCSV(FOLDER_IDS.leads);  // silent — leads live in sub-folders
+
   if (!rows.length && isDriveAvailable()) {
     try {
       const subRes = await driveApiFetch('/files', {
@@ -131,11 +158,21 @@ async function getLeadsRows() {
       });
       const subFolders = (await subRes.json()).files || [];
       if (subFolders.length) {
-        const subRowArrays = await Promise.all(subFolders.map(sf => loadCSV('leads', sf.id)));
+        const subRowArrays = await Promise.all(
+          subFolders.map(sf => loadCSV(sf.id, 'Leads / ' + sf.name))
+        );
         rows = subRowArrays.flat();
+        if (rows.length) {
+          _ok('Leads (combined)', rows.length + ' rows across ' + subFolders.length + ' sub-folders');
+        } else {
+          _warn('Leads', 'no CSV files found in any sub-folder');
+        }
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      _err('Leads (sub-folders)', e.message);
+    }
   }
+
   cache.leadsRows = rows;
   return rows;
 }
@@ -143,40 +180,64 @@ async function getLeadsRows() {
 async function getSalesLogData() {
   if (cache.salesLogData) return cache.salesLogData;
 
+  // Sales - Live is an .xlsx file.
+  // driveReadXLSX() fetches binary via alt=media, converts each sheet to CSV via SheetJS,
+  // and returns them concatenated with "### SheetName" headers.
+  // parseSalesLog() finds "Joseph-Cars" / "Felix-Cars" / "Kris-Cars" sheets by indexOf().
+
   let txt = '', loadedFrom = '';
 
-  // 1. Drive by file ID (Cowork → OAuth)
-  if (!txt && isDriveAvailable()) {
-    try { txt = await driveRead(FILE_IDS.salesLog); if (txt?.length > 100) loadedFrom = 'drive:id'; } catch (e) {}
-  }
+  if (isDriveAvailable()) {
+    // 1. Known file ID (fastest path)
+    try {
+      const raw = await driveReadXLSX(FILE_IDS.salesLog);
+      if (raw && raw.length > 100) { txt = raw; loadedFrom = 'drive:id'; }
+    } catch (e) {
+      _err('Sales Log (xlsx by ID)', e.message);
+    }
 
-  // 2. Drive by name search
-  if (!txt && isDriveAvailable()) {
-    const f = await driveSearchByName(FILE_NAME_PATTERNS.salesLive);
-    if (f?.id) {
-      try { txt = await driveRead(f.id); if (txt?.length > 100) loadedFrom = 'drive:name:' + f.name; } catch (e) {}
+    // 2. Name search fallback
+    if (!txt) {
+      const f = await driveSearchByName(FILE_NAME_PATTERNS.salesLive);
+      if (f) {
+        try {
+          const fn  = (f.name || '').toLowerCase();
+          const raw = (fn.endsWith('.xlsx') || fn.endsWith('.xls'))
+            ? await driveReadXLSX(f.id)
+            : await driveRead(f.id);
+          if (raw && raw.length > 100) { txt = raw; loadedFrom = 'drive:name:' + f.name; }
+        } catch (e) {
+          _err('Sales Log (by name "' + f.name + '")', e.message);
+        }
+      }
     }
   }
 
-  // 3. Local file
-  if (!txt) {
-    const localPath = LOCAL_FILES.salesLog;
-    if (localPath) {
-      const local = await fetchLocal(localPath);
-      if (local && local.length > 100) { txt = local; loadedFrom = 'local'; }
-    }
-  }
-
-  const result     = parseSalesLog(txt);
+  const result = parseSalesLog(txt);
   result._loadedFrom = loadedFrom;
-  result._debug    = (result._debug || '') + (loadedFrom ? ` via ${loadedFrom}` : '');
+
+  if (!txt) {
+    _warn('Sales Log', 'file not found or could not be read — SP breakdown will be empty');
+  } else {
+    const sheets = { joseph: result.joseph?.length || 0, felix: result.felix?.length || 0, kris: result.kris?.length || 0 };
+    const empty  = Object.entries(sheets).filter(([,n]) => n === 0).map(([k]) => k);
+    if (empty.length) {
+      _warn('Sales Log', 'loaded via ' + loadedFrom +
+        ' | Joseph:' + sheets.joseph + ' Felix:' + sheets.felix + ' Kris:' + sheets.kris +
+        ' — empty sheets: ' + empty.join(', '));
+    } else {
+      _ok('Sales Log', 'via ' + loadedFrom +
+        ' | Joseph:' + sheets.joseph + ' Felix:' + sheets.felix + ' Kris:' + sheets.kris + ' deals');
+    }
+  }
+
   cache.salesLogData = result;
   return result;
 }
 
 async function getWarrantyData() {
   if (cache.warrantyData) return cache.warrantyData;
-  const rows = await loadCSVByName('warranty', FILE_NAME_PATTERNS.warranty, 'Remittance', 'Warranty');
+  const rows    = await loadCSVByName('Warranty Remittance', FILE_NAME_PATTERNS.warranty, 'Remittance', 'Warranty');
   const totalDue = rows.reduce((s, r) => {
     const v = parseMoney(getField(r, 'total contract due', 'total due', 'contract due', 'amount due'));
     return s + (isNaN(v) ? 0 : v);
@@ -187,68 +248,141 @@ async function getWarrantyData() {
 
 async function getAccountingText() {
   if (cache.accountingText !== undefined) return cache.accountingText;
-  const txt = await loadText('accounting', FILE_IDS.accounting);
+
+  // Accounting Package is an .xlsx file — convert via SheetJS so extractPLMetrics()
+  // can do its regex/indexOf matching against the CSV-formatted cell values.
+  let txt = '';
+  if (isDriveAvailable()) {
+    try {
+      txt = await driveReadXLSX(FILE_IDS.accounting);
+      if (txt && txt.length > 50) {
+        // Count total non-empty lines across all sheets as a proxy for data density.
+        const lines = txt.split('\n').filter(l => l.trim() && !l.startsWith('###')).length;
+        _ok('Accounting Package', '"' + FILE_IDS.accounting + '" — ' + lines.toLocaleString() + ' data lines via SheetJS');
+      } else {
+        _warn('Accounting Package', 'xlsx parsed but result is empty');
+        txt = '';
+      }
+    } catch (e) {
+      _err('Accounting Package (xlsx)', e.message);
+      // Last-resort: try plain text read (will get binary noise for xlsx but may still pattern-match)
+      try { txt = await driveRead(FILE_IDS.accounting); } catch (_) {}
+    }
+  } else {
+    _warn('Accounting Package', 'Drive not available (not signed in)');
+  }
+
   cache.accountingText = txt;
   return txt;
 }
 
 async function getChaseText() {
   if (cache.chaseText !== undefined) return cache.chaseText;
-  const txt = await loadCSVByName('chase9532', FILE_NAME_PATTERNS.chase9532, 'Chase9532', 'Chase Checking');
-  // loadCSVByName returns rows — for chase we want raw text for custom parsing, so re-fetch as text
-  const localPath = LOCAL_FILES.chase9532;
-  if (localPath) {
-    const local = await fetchLocal(localPath);
-    if (local && local.length > 50) { cache.chaseText = local; return local; }
+  if (!isDriveAvailable()) {
+    _warn('Chase 9532', 'Drive not available (not signed in)');
+    cache.chaseText = '';
+    return '';
   }
-  // fallback: re-stringify parsed rows (not ideal but functional)
+  const f = await driveSearchByName(FILE_NAME_PATTERNS.chase9532);
+  if (f) {
+    try {
+      const txt = await driveRead(f.id);
+      if (txt && txt.length > 50) {
+        _ok('Chase 9532', '"' + f.name + '" — ' + txt.length.toLocaleString() + ' chars | mod ' + _modStr(f.modifiedTime));
+        cache.chaseText = txt;
+        return txt;
+      }
+    } catch (e) {
+      _err('Chase 9532', '"' + f.name + '" — ' + e.message);
+    }
+  } else {
+    _warn('Chase 9532', 'no file matching "' + FILE_NAME_PATTERNS.chase9532 + '" found in Drive');
+  }
   cache.chaseText = '';
   return '';
 }
 
-async function getLoanPaymentRows() {
-  if (cache.loanPayRows) return cache.loanPayRows;
-  const rows = await loadCSV('loanPayments', FOLDER_IDS.loanPayments);
-  cache.loanPayRows = rows;
-  return rows;
-}
-
-// Westlake Flooring Paid Units — cross-checks against Itemized Costs for flooring To-Do flag
+// Westlake Flooring Paid Units — files live in the "Paid Units Report" sub-folder.
 async function getWestlakePaidUnitsRows() {
   if (cache.westlakePaid) return cache.westlakePaid;
+  if (!isDriveAvailable()) {
+    _warn('Westlake Paid Units', 'Drive not available (not signed in)');
+    cache.westlakePaid = [];
+    return [];
+  }
+  let file = null;
   try {
-    const file = await driveSearchLatest(FOLDER_IDS.westlakeFlooring);
-    if (!file) { cache.westlakePaid = []; return []; }
-    const txt = await driveRead(file.id);
-    cache.westlakePaid = parseCSV(preprocessFlatCSV(txt));
-    return cache.westlakePaid;
-  } catch (e) { cache.westlakePaid = []; return []; }
+    file = await driveSearchLatest(FOLDER_IDS.westlakePaidUnits);
+    if (!file) {
+      _warn('Westlake Paid Units', 'no file found in Paid Units Report sub-folder');
+      cache.westlakePaid = [];
+      return [];
+    }
+    const txt  = await driveRead(file.id);
+    const rows = parseCSV(preprocessFlatCSV(txt));
+    _ok('Westlake Paid Units', '"' + file.name + '" — ' + rows.length + ' rows | mod ' + _modStr(file.modifiedTime));
+    cache.westlakePaid = rows;
+    return rows;
+  } catch (e) {
+    _err('Westlake Paid Units', (file ? '"' + file.name + '" — ' : '') + e.message);
+    cache.westlakePaid = [];
+    return [];
+  }
 }
 
-// Titles Report — "Sold Inventory - Title Report (New) - <timestamp>.csv"
-// Lives in: Autoport Shared > 5. AP - Accounting > 1. Accounting > Reports > Titles
-// Always picks the most-recently-modified file matching the name pattern.
+// Sold Inventory - Title Report
 async function getTitlesRows() {
   if (cache.titlesRows) return cache.titlesRows;
+  if (!isDriveAvailable()) {
+    _warn('Titles Report', 'Drive not available (not signed in)');
+    cache.titlesRows = [];
+    return [];
+  }
+  let f = null;
   try {
-    const f = await driveSearchByName(FILE_NAME_PATTERNS.titlesReport)
-           || await driveSearchByName('Title Report');
-    if (!f) { cache.titlesRows = []; return []; }
-    const txt = await driveRead(f.id);
-    cache.titlesRows = parseCSV(preprocessFlatCSV(txt));
-    return cache.titlesRows;
-  } catch (e) { cache.titlesRows = []; return []; }
+    f = await driveSearchByName(FILE_NAME_PATTERNS.titlesReport)
+     || await driveSearchByName('Title Report');
+    if (!f) {
+      _warn('Titles Report', 'no file matching "' + FILE_NAME_PATTERNS.titlesReport + '" found in Drive');
+      cache.titlesRows = [];
+      return [];
+    }
+    const txt  = await driveRead(f.id);
+    const rows = parseCSV(preprocessFlatCSV(txt));
+    _ok('Titles Report', '"' + f.name + '" — ' + rows.length + ' rows | mod ' + _modStr(f.modifiedTime));
+    cache.titlesRows = rows;
+    return rows;
+  } catch (e) {
+    _err('Titles Report', (f ? '"' + f.name + '" — ' : '') + e.message);
+    cache.titlesRows = [];
+    return [];
+  }
 }
 
-// DTS Title Transfers — "Module Reports - Title Transfers - <timestamp>.csv"
-// Lives in: FOLDER_IDS.dtsReports — always picks the most-recently-modified file.
+// DTS Title Transfers — Module Reports - Title Transfers
 async function getDTSRows() {
   if (cache.dtsRows) return cache.dtsRows;
+  if (!isDriveAvailable()) {
+    _warn('DTS Reports', 'Drive not available (not signed in)');
+    cache.dtsRows = [];
+    return [];
+  }
+  let file = null;
   try {
-    const file = await driveSearchLatest(FOLDER_IDS.dtsReports);
-    if (!file) { cache.dtsRows = []; return []; }
-    const txt = await driveRead(file.id);
-    cache.dtsRows = parseCSV(preprocessFlatCSV(txt));
-    return cache.dtsRows;
-  } catch (e) { cache.dtsRows = []; return []; }
+    file = await driveSearchLatest(FOLDER_IDS.dtsReports);
+    if (!file) {
+      _warn('DTS Reports', 'no file found in DTS Reports folder');
+      cache.dtsRows = [];
+      return [];
+    }
+    const txt  = await driveRead(file.id);
+    const rows = parseCSV(preprocessFlatCSV(txt));
+    _ok('DTS Reports', '"' + file.name + '" — ' + rows.length + ' rows | mod ' + _modStr(file.modifiedTime));
+    cache.dtsRows = rows;
+    return rows;
+  } catch (e) {
+    _err('DTS Reports', (file ? '"' + file.name + '" — ' : '') + e.message);
+    cache.dtsRows = [];
+    return [];
+  }
 }
