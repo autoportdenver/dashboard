@@ -1,0 +1,50 @@
+# ===========================================================================
+#  .gitignore  --  keep this PUBLIC repo to the bare minimum needed to build.
+#  Anything generated, sensitive, or unused is excluded below.
+# ===========================================================================
+
+# ── Generated build output (rebuilt by CI / locally; never committed) ────────
+/index.html
+/public/
+/data/*.json
+
+# ── Source data & the workbook itself (dealership-internal — never publish) ──
+_work/
+*.xlsx
+*.xlsm
+*.xls
+*.xltx
+*.csv
+*.tsv
+
+# ── Kept local only — not published to the public repo ──────────────────────
+#    docs (setup guides reference internal file/drive names), the one-time
+#    setup helper, and the unused service-account-key workflow.
+docs/
+ci/setup-wif.sh
+.github/workflows/publish-sa-key.yml
+
+# ── Credentials / keys — must NEVER be committed ─────────────────────────────
+gha-creds-*.json
+*service-account*.json
+*sa-key*.json
+*credentials*.json
+client_secret*.json
+*.pem
+*.p12
+.env
+.env.*
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ── OS / editor cruft ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

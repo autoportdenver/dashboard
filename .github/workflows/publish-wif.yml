@@ -1,0 +1,99 @@
+# ===========================================================================
+#  Publish view-only dashboard to GitHub Pages  --  WIF (keyless) auth
+# ===========================================================================
+#  Pulls the accounting workbook from Google Drive, regenerates reports.json +
+#  flags.json, rebuilds index.html, and deploys it to GitHub Pages.
+#
+#  Auth: Workload Identity Federation -- NO service-account key is stored. At run
+#  time GitHub's OIDC token is exchanged for a short-lived Google credential.
+#
+#  One-time setup:
+#    1. Google Cloud: create a Workload Identity Pool + provider bound to this
+#       repo, and a service account the provider may impersonate. Enable the
+#       Drive API on the project.
+#    2. Share the workbook (Viewer) with the service account, and add it as a
+#       member of the "Autoport Shared" Shared Drive.
+#    3. Repo -> Settings -> Pages -> Source: "GitHub Actions".
+#    4. Repo -> Settings -> Secrets and variables -> Actions -> Variables:
+#         WIF_PROVIDER          projects/123.../locations/global/workloadIdentityPools/POOL/providers/PROVIDER
+#         WIF_SERVICE_ACCOUNT   dashboard-sync@PROJECT.iam.gserviceaccount.com
+#         DRIVE_FILE_ID         the file ID of "AP Acct Pckg .v6 - Live.xlsx"
+#       (These are identifiers, not secrets -- Variables, not Secrets.)
+# ===========================================================================
+
+name: publish-dashboard (WIF)
+
+on:
+  schedule:
+    - cron: "0 13,20 * * 1-6"   # 13:00 & 20:00 UTC, Mon-Sat (~business hours MDT)
+  workflow_dispatch:            # manual "Run workflow" button
+
+# Flip to "true" to recalc formulas with LibreOffice before reading (needed only
+# if the workbook's cached values may be stale, i.e. it isn't Excel-saved).
+env:
+  RECALC: "false"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write               # required for BOTH WIF auth and Pages deploy
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Authenticate to Google (keyless / WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - name: Install Python deps
+        run: pip install openpyxl google-api-python-client google-auth
+
+      - name: Install LibreOffice (only when recalc is on)
+        if: env.RECALC == 'true'
+        run: sudo apt-get update && sudo apt-get install -y libreoffice-calc
+
+      - name: Fetch workbook from Drive
+        env:
+          DRIVE_FILE_ID: ${{ vars.DRIVE_FILE_ID }}
+          OUT: _work/package.xlsx
+        run: python ci/fetch_drive_file.py
+
+      - name: Generate reports.json + flags.json
+        run: >
+          python build/make_json.py
+          --workbook _work/package.xlsx
+          --out data
+          ${{ env.RECALC == 'true' && '--recalc' || '--no-recalc' }}
+
+      - name: Build index.html
+        env:
+          VIEWONLY_OUT: public
+        run: python build/build_viewonly.py
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
